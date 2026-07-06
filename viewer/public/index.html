@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>nk-camera</title>
+<style>
+  :root { --bg:#0d0f12; --panel:#171a1f; --line:#262b33; --fg:#e7ebf0; --mut:#8b95a3;
+          --accent:#3da2ff; --rec:#ff4d4d; --ok:#38d39f; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.02em; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); }
+  .dot.live { background:var(--ok); box-shadow:0 0 8px var(--ok); }
+  .dot.err { background:var(--rec); }
+  header .meta { margin-left:auto; color:var(--mut); font-size:12px; }
+  .stage { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; background:#000; overflow:hidden; }
+  #stage { display:flex; align-items:center; justify-content:center; width:100%; height:100%; }
+  #stage video, #stage img, #stage video-stream { max-width:100%; max-height:100%; object-fit:contain; background:#000; }
+  .cover #stage video, .cover #stage img, .cover #stage video-stream { width:100%; height:100%; object-fit:cover; }
+  .badge { position:absolute; top:10px; left:10px; background:rgba(0,0,0,.55); padding:3px 9px; border-radius:999px; font-size:11px; color:var(--mut); letter-spacing:.04em; max-width:80%; }
+  .recbadge { position:absolute; top:10px; right:10px; display:none; align-items:center; gap:6px; background:rgba(0,0,0,.6); padding:4px 10px; border-radius:999px; font-size:12px; color:#fff; }
+  .recbadge.on { display:flex; }
+  .recbadge .dot { background:var(--rec); animation:blink 1s infinite; }
+  @keyframes blink { 50%{opacity:.25} }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; padding:12px; border-top:1px solid var(--line); background:var(--panel); justify-content:center; }
+  button, select { font:inherit; color:var(--fg); background:#20242b; border:1px solid var(--line); border-radius:10px; padding:10px 13px; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
+  button:active { transform:translateY(1px); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#04121f; font-weight:600; }
+  button.rec { background:var(--rec); border-color:var(--rec); color:#2a0000; font-weight:600; }
+  button.on { outline:2px solid var(--accent); background:#233; }
+  .grp { display:flex; gap:6px; align-items:center; background:#14171c; padding:5px; border-radius:12px; border:1px solid var(--line); }
+  .grp small { color:var(--mut); padding:0 4px; }
+  /* adjust panel */
+  .adjust { display:none; gap:18px; flex-wrap:wrap; padding:14px 16px; border-top:1px solid var(--line); background:#12151a; justify-content:center; }
+  .adjust.open { display:flex; }
+  .slider { display:flex; flex-direction:column; gap:4px; min-width:140px; }
+  .slider label { font-size:12px; color:var(--mut); display:flex; justify-content:space-between; }
+  .slider input[type=range] { width:100%; accent-color:var(--accent); }
+  @media (max-width:520px){ button,select{ padding:9px 11px; } header .meta{ display:none; } .slider{ min-width:44%; } }
+</style>
+</head>
+<body>
+  <header>
+    <span id="status" class="dot"></span>
+    <h1>nk-camera</h1>
+    <span class="meta" id="meta"></span>
+  </header>
+
+  <div class="stage" id="stagewrap">
+    <div id="stage"></div>
+    <div class="badge" id="badge"></div>
+    <div class="recbadge" id="recbadge"><span class="dot"></span><span id="rectime">REC</span></div>
+  </div>
+
+  <div class="adjust" id="adjust">
+    <div class="slider"><label>Brightness <span id="bV">100%</span></label><input id="b" type="range" min="0.4" max="1.6" step="0.02" value="1"></div>
+    <div class="slider"><label>Contrast <span id="cV">100%</span></label><input id="c" type="range" min="0.4" max="1.6" step="0.02" value="1"></div>
+    <div class="slider"><label>Saturation <span id="sV">100%</span></label><input id="s" type="range" min="0" max="2" step="0.02" value="1"></div>
+    <div class="slider"><label>Hue <span id="hV">0°</span></label><input id="hue" type="range" min="-180" max="180" step="2" value="0"></div>
+    <button id="resetadj">↺ Reset</button>
+  </div>
+
+  <div class="bar">
+    <div class="grp">
+      <small>live</small>
+      <button data-mode="rtc" class="mbtn on">⚡ WebRTC</button>
+      <button data-mode="mjpeg" class="mbtn">🎞 MJPEG</button>
+    </div>
+    <button class="primary" id="snap">📷 Snapshot</button>
+    <div class="grp">
+      <button class="rec" id="rec">⏺ Record</button>
+      <select id="dur" title="length"><option value="10">10s</option><option value="15" selected>15s</option><option value="30">30s</option><option value="60">60s</option></select>
+    </div>
+    <div class="grp">
+      <small>res</small>
+      <button data-q="hd" class="qbtn on">HD</button>
+      <button data-q="sd" class="qbtn">SD</button>
+    </div>
+    <button id="adjbtn">🎚 Adjust</button>
+    <button id="rotate">⟳ Rotate</button>
+    <button id="mirror">⇄ Mirror</button>
+    <button id="logo">🚫 Hide YI</button>
+    <button id="fit">⤢ Fit</button>
+    <button id="full">⛶ Fullscreen</button>
+  </div>
+
+<script type="module">
+  import { VideoRTC } from './video-rtc.js';
+  if (!customElements.get('video-stream')) customElements.define('video-stream', VideoRTC);
+
+  const state = { mode:'rtc', q:'hd', rot:0, mirror:false, hidelogo:false, cover:false, b:1, c:1, s:1, hue:0 };
+  let go2rtcPort = 1984;
+  const stage = document.getElementById('stage');
+  const statusDot = document.getElementById('status');
+  const badge = document.getElementById('badge');
+  const el = () => stage.firstElementChild;
+
+  // SD + hide-YI need our ffmpeg (transcode) → force MJPEG (WebRTC is raw passthrough)
+  function coerceMode() {
+    if ((state.q === 'sd' || state.hidelogo) && state.mode === 'rtc') state.mode = 'mjpeg';
+    document.querySelectorAll('.mbtn').forEach(b => b.classList.toggle('on', b.dataset.mode === state.mode));
+  }
+  // rotate/mirror/colour are applied live via CSS (instant, both engines); server bakes them into captures.
+  function applyCss() {
+    const m = el(); if (!m) return;
+    m.style.transform = `rotate(${state.rot}deg)` + (state.mirror ? ' scaleX(-1)' : '');
+    m.style.filter = `brightness(${state.b}) contrast(${state.c}) saturate(${state.s}) hue-rotate(${state.hue}deg)`;
+  }
+  const capParams = () => `q=${state.q}&rot=${state.rot}&mirror=${state.mirror?1:0}&hidelogo=${state.hidelogo?1:0}`
+    + `&b=${state.b}&c=${state.c}&s=${state.s}&hue=${state.hue}`;
+
+  function render() {                     // (re)build the live stream element
+    coerceMode();
+    stage.innerHTML = '';
+    statusDot.className = 'dot';
+    if (state.mode === 'rtc') {
+      const v = document.createElement('video-stream');
+      v.mode = 'webrtc,mse,mjpeg';
+      stage.appendChild(v);
+      v.src = `ws://${location.hostname}:${go2rtcPort}/api/ws?src=nk-camera`;
+      statusDot.className = 'dot live';
+    } else {
+      const img = document.createElement('img');   // server does SD + hide-YI; CSS does rotate/mirror/colour
+      img.onload = () => statusDot.className = 'dot live';
+      img.onerror = () => { statusDot.className = 'dot err'; setTimeout(render, 1500); };
+      img.src = `/stream.mjpeg?q=${state.q}&hidelogo=${state.hidelogo?1:0}&_=${Date.now()}`;
+      stage.appendChild(img);
+    }
+    applyCss();
+    badge.textContent = `${state.mode==='rtc'?'WebRTC':'MJPEG'} · ${state.q.toUpperCase()}`
+      + (state.rot?` · ${state.rot}°`:'') + (state.mirror?' · mir':'') + (state.hidelogo?' · no-YI':'');
+  }
+
+  // capture (server ffmpeg, honours every setting incl. colour)
+  document.getElementById('snap').onclick = () => {
+    const a = document.createElement('a');
+    a.href = `/snapshot.jpg?${capParams()}&download=1&_=${Date.now()}`;
+    a.download = `nk-camera_${Date.now()}.jpg`; document.body.appendChild(a); a.click(); a.remove();
+  };
+  const recBadge = document.getElementById('recbadge'), recTime = document.getElementById('rectime');
+  document.getElementById('rec').onclick = () => {
+    const secs = parseInt(document.getElementById('dur').value, 10);
+    const a = document.createElement('a');
+    a.href = `/record?seconds=${secs}&${capParams()}&_=${Date.now()}`;
+    a.download = `nk-camera_${Date.now()}_${secs}s.mp4`; document.body.appendChild(a); a.click(); a.remove();
+    let left = secs; recBadge.classList.add('on'); recTime.textContent = 'REC ' + left + 's';
+    const t = setInterval(() => { left--; recTime.textContent = 'REC ' + left + 's';
+      if (left <= 0) { clearInterval(t); recBadge.classList.remove('on'); } }, 1000);
+  };
+
+  document.querySelectorAll('.mbtn').forEach(b => b.onclick = () => { state.mode = b.dataset.mode; render(); });
+  document.querySelectorAll('.qbtn').forEach(b => b.onclick = () => {
+    state.q = b.dataset.q; document.querySelectorAll('.qbtn').forEach(x => x.classList.toggle('on', x === b)); render(); });
+  document.getElementById('rotate').onclick = () => { state.rot = (state.rot + 90) % 360; applyCss(); updateBadge(); };
+  document.getElementById('mirror').onclick = (e) => { state.mirror = !state.mirror; e.currentTarget.classList.toggle('on', state.mirror); applyCss(); updateBadge(); };
+  document.getElementById('logo').onclick = (e) => { state.hidelogo = !state.hidelogo; e.currentTarget.classList.toggle('on', state.hidelogo); render(); };
+  document.getElementById('fit').onclick = (e) => { state.cover = !state.cover; document.body.classList.toggle('cover', state.cover); e.currentTarget.classList.toggle('on', state.cover); };
+  document.getElementById('full').onclick = () => { const s = document.getElementById('stagewrap'); (s.requestFullscreen||s.webkitRequestFullscreen||(()=>{})).call(s); };
+  function updateBadge(){ badge.textContent = `${state.mode==='rtc'?'WebRTC':'MJPEG'} · ${state.q.toUpperCase()}` + (state.rot?` · ${state.rot}°`:'') + (state.mirror?' · mir':'') + (state.hidelogo?' · no-YI':''); }
+
+  // adjust panel
+  document.getElementById('adjbtn').onclick = (e) => { document.getElementById('adjust').classList.toggle('open'); e.currentTarget.classList.toggle('on'); };
+  const pct = (v) => Math.round(v*100)+'%';
+  function bindSlider(id, key, label, fmt) {
+    const inp = document.getElementById(id), out = document.getElementById(label);
+    inp.oninput = () => { state[key] = parseFloat(inp.value); out.textContent = fmt(state[key]); applyCss(); };
+  }
+  bindSlider('b','b','bV', pct); bindSlider('c','c','cV', pct); bindSlider('s','s','sV', pct);
+  bindSlider('hue','hue','hV', v => Math.round(v)+'°');
+  document.getElementById('resetadj').onclick = () => {
+    state.b=state.c=state.s=1; state.hue=0;
+    for (const [id,val,lbl,txt] of [['b',1,'bV','100%'],['c',1,'cV','100%'],['s',1,'sV','100%'],['hue',0,'hV','0°']]) {
+      document.getElementById(id).value = val; document.getElementById(lbl).textContent = txt;
+    }
+    applyCss();
+  };
+
+  fetch('/api/info').then(r=>r.json()).then(d=>{ go2rtcPort = d.go2rtcPort || 1984; document.getElementById('meta').textContent = d.camera; render(); }).catch(render);
+</script>
+</body>
+</html>

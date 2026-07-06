@@ -1,0 +1,23 @@
+# --- secrets / local config (NEVER commit) ---
+config.env
+sd-card/yi-hack-v3/wpa_supplicant.conf
+
+# --- downloaded firmware binaries (fetch with firmware/fetch-firmware.sh) ---
+firmware/home_y18
+firmware/rootfs_y18
+firmware/recovery/
+*.uImage
+
+# --- third-party RTSP add-on binaries (fetch with scripts/fetch-rtsp-addon.sh) ---
+firmware/rtsp-addon/
+
+# --- node / viewer ---
+viewer/node_modules/
+viewer/.env
+viewer/go2rtc/go2rtc
+
+# --- os / editor junk ---
+.DS_Store
+scratch/
+*.log
+pics

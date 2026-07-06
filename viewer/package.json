@@ -1,0 +1,14 @@
+{
+  "name": "localcamera-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local web viewer for the yi-hack camera: live view, snapshot, record, adjust.",
+  "main": "server.js",
+  "scripts": {
+    "start": "sh start.sh",
+    "start:mjpeg": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

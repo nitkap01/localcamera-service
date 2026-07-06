@@ -1,0 +1,14 @@
+# go2rtc — provides sub-second WebRTC live view for the viewer.
+# CAMERA_IP is injected from the environment by ../start.sh (from config.env).
+streams:
+  nk-camera: rtsp://${CAMERA_IP}:554/ch0_0.h264
+
+api:
+  listen: ":1984"     # signaling + web API (browser connects here for WebRTC)
+  origin: "*"         # allow the viewer page (served on :8080) to open the WS
+
+webrtc:
+  listen: ":8555"     # webrtc media port (LAN)
+
+log:
+  level: warn
