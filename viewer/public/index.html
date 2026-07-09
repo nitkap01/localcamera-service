@@ -113,7 +113,40 @@
   const capParams = () => `q=${state.q}&rot=${state.rot}&mirror=${state.mirror?1:0}&hidelogo=${state.hidelogo?1:0}`
     + `&b=${state.b}&c=${state.c}&s=${state.s}&hue=${state.hue}`;
 
+  let rtcTimer = null;
+  function showTransport(v) {              // report the transport that ACTUALLY connected
+    const vid = v.querySelector('video');
+    let t = 'MJPEG';
+    if (vid && vid.srcObject) t = 'WebRTC';
+    else if (vid && typeof vid.src === 'string' && vid.src.startsWith('blob:')) t = 'MSE';
+    badge.textContent = `${t} · ${state.q.toUpperCase()}`
+      + (state.rot ? ` · ${state.rot}°` : '') + (state.mirror ? ' · mir' : '')
+      + (state.hidelogo ? ' · no-YI' : '');
+  }
+  // Watch the go2rtc player: mark "live" only on real playback, show the real
+  // transport, and if nothing plays within a few seconds fall back to MJPEG so
+  // the screen isn't just black.
+  function watchRtc(v) {
+    clearInterval(rtcTimer);
+    const t0 = Date.now();
+    rtcTimer = setInterval(() => {
+      const vid = v.querySelector('video');
+      if (vid && !vid.dataset.wired) {
+        vid.dataset.wired = '1';
+        vid.addEventListener('playing', () => { statusDot.className = 'dot live'; showTransport(v); });
+        vid.addEventListener('waiting', () => { if (statusDot.className === 'dot live') statusDot.className = 'dot'; });
+        vid.addEventListener('error', () => { statusDot.className = 'dot err'; });
+      }
+      if (vid && vid.readyState >= 3 && !vid.paused) { clearInterval(rtcTimer); rtcTimer = null; }
+      else if (Date.now() - t0 > 9000) {
+        clearInterval(rtcTimer); rtcTimer = null;
+        if (state.mode === 'rtc') { state.mode = 'mjpeg'; render(); badge.textContent = 'WebRTC/MSE unavailable → MJPEG'; }
+      }
+    }, 300);
+  }
+
   function render() {                     // (re)build the live stream element
+    clearInterval(rtcTimer); rtcTimer = null;
     coerceMode();
     stage.innerHTML = '';
     statusDot.className = 'dot';
@@ -121,8 +154,9 @@
       const v = document.createElement('video-stream');
       v.mode = 'webrtc,mse,mjpeg';
       stage.appendChild(v);
-      v.src = `ws://${location.hostname}:${go2rtcPort}/api/ws?src=nk-camera`;
-      statusDot.className = 'dot live';
+      v.src = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${go2rtcPort}/api/ws?src=nk-camera`;
+      statusDot.className = 'dot';          // grey "connecting" until real playback starts
+      watchRtc(v);
     } else {
       const img = document.createElement('img');   // server does SD + hide-YI; CSS does rotate/mirror/colour
       img.onload = () => statusDot.className = 'dot live';
@@ -159,7 +193,15 @@
   document.getElementById('mirror').onclick = (e) => { state.mirror = !state.mirror; e.currentTarget.classList.toggle('on', state.mirror); applyCss(); updateBadge(); };
   document.getElementById('logo').onclick = (e) => { state.hidelogo = !state.hidelogo; e.currentTarget.classList.toggle('on', state.hidelogo); render(); };
   document.getElementById('fit').onclick = (e) => { state.cover = !state.cover; document.body.classList.toggle('cover', state.cover); e.currentTarget.classList.toggle('on', state.cover); };
-  document.getElementById('full').onclick = () => { const s = document.getElementById('stagewrap'); (s.requestFullscreen||s.webkitRequestFullscreen||(()=>{})).call(s); };
+  document.getElementById('full').onclick = () => {
+    const wrap = document.getElementById('stagewrap');
+    const vid = stage.querySelector('video');   // the WebRTC/MSE inner <video>, if any
+    // iOS Safari can't fullscreen a <div>/<img> — only a <video> via webkitEnterFullscreen.
+    if (!document.fullscreenEnabled && vid && vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; }
+    if (wrap.requestFullscreen) { wrap.requestFullscreen().catch(() => { if (vid && vid.webkitEnterFullscreen) vid.webkitEnterFullscreen(); }); }
+    else if (wrap.webkitRequestFullscreen) { wrap.webkitRequestFullscreen(); }
+    else if (vid && vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); }
+  };
   function updateBadge(){ badge.textContent = `${state.mode==='rtc'?'WebRTC':'MJPEG'} · ${state.q.toUpperCase()}` + (state.rot?` · ${state.rot}°`:'') + (state.mirror?' · mir':'') + (state.hidelogo?' · no-YI':''); }
 
   // adjust panel
