@@ -375,3 +375,53 @@ instead of running from a laptop.
 - Verified statically (daemon was off locally): entrypoint `sh -n` clean; all
   three go2rtc release URLs return HTTP 200. Actual `docker build`/push pending a
   running Docker daemon.
+
+---
+
+## 12. Milestone — publish image + fix mobile WebRTC (2026-07-09)
+
+Shipped the image to Docker Hub and fixed the viewer being flaky on phones.
+
+- **Viewer client fixes** (`viewer/public/index.html`):
+  - Honest status — the "live" dot was going green *before* anything connected,
+    so a silent fall-back to slow MJPEG looked healthy. Now: grey while
+    connecting, green only on real playback, and a badge shows the transport that
+    actually connected (WebRTC / MSE / MJPEG). A watchdog drops to MJPEG after
+    ~9s instead of a black screen.
+  - Mobile fullscreen — was calling `requestFullscreen()` on a `<div>`, which
+    iOS Safari ignores. Now calls `webkitEnterFullscreen()` on the inner
+    `<video>` when the Fullscreen API isn't available.
+- **Container WebRTC on mobile** — in a bridge network go2rtc only knows its
+  internal Docker IP and hands *that* to the browser as the connect-back
+  candidate, so phones can't complete WebRTC and drop to MJPEG (desktop on the
+  same host still worked because we were testing the Mac-native viewer). Fix:
+  new `WEBRTC_CANDIDATE=<host-lan-ip>:8555` env, merged into go2rtc as a second
+  `-config` at boot (`docker-entrypoint.sh`). Host networking needs nothing.
+- **Published** `nitinkapoor/localcamera-viewer:latest` — multi-arch
+  (`linux/amd64` + `linux/arm64`) via `docker buildx ... --push`.
+- **Verified end-to-end**: image builds; container boots go2rtc + node; pulls a
+  real 1280x720 frame from the camera through Docker's network; the
+  `WEBRTC_CANDIDATE` line shows in the boot log; ffmpeg 8.0.1 + go2rtc 1.9.14
+  present; multi-arch manifest confirmed on the registry.
+- Portainer target host: `192.168.0.246:8080` (separate Linux box). Deploy with
+  host networking, or bridge + published `8080/1984/8555` + the candidate env.
+
+### Blue-status-LED investigation (open — needs a live test)
+
+Asked to add an on/off toggle for the blue LED. Traced the mechanism; there is
+**no safe static toggle** on this firmware:
+
+- No `led_ctl` binary and no LED script anywhere on the camera (the old
+  fritz-smh hack had `/home/led_ctl -bon/-boff`; this shadow-1/yi-hack-v3 build
+  does not).
+- The LED is driven inside the compiled stock app **`rmm`**, which shells out to
+  `himm` (needs `LD_LIBRARY_PATH=/home/lib` — same libpthread quirk as RTSP).
+  The only runtime-formatted writes are `himm 0x201200{c8,d4,d8} 0x%s`.
+- Those addresses live in the Hi3518 **system-control / clock block**
+  (`0x20120000`), not a plain GPIO group — sensor/clock-adjacent, and reads
+  bus-error (write-only). Init defaults come from `/home/app/init.sh`
+  (`0x201200c8=0x23c2e`, `0x201200d8=0x0d1ec001`). Poking them blind is risky
+  (could disturb video, not just the LED), and `rmm` re-asserts them.
+- **Next step:** a bounded, reboot-reversible live test — write one candidate
+  value while watching the physical LED, revert immediately. Only then wire a
+  `led.sh on|off` + a viewer button. Not attempted yet (needs eyes on the cam).
