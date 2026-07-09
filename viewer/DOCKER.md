@@ -47,7 +47,7 @@ docker login
 docker buildx create --use --name lcs 2>/dev/null || docker buildx use lcs
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t YOURUSER/localcamera-viewer:latest \
+  -t nitinkapoor/localcamera-viewer:latest \
   --push .
 ```
 
@@ -55,8 +55,8 @@ Single-arch (just your server's CPU) is simpler if you don't need ARM:
 
 ```bash
 cd viewer
-docker build -t YOURUSER/localcamera-viewer:latest .
-docker push YOURUSER/localcamera-viewer:latest
+docker build -t nitinkapoor/localcamera-viewer:latest .
+docker push nitinkapoor/localcamera-viewer:latest
 ```
 
 ## Deploy on Portainer
@@ -66,7 +66,7 @@ docker push YOURUSER/localcamera-viewer:latest
 `network_mode: host`, which is the simplest way to get WebRTC working on a LAN.
 
 **Option B — Container.** Portainer → *Containers* → *Add container*:
-- Image: `YOURUSER/localcamera-viewer:latest`
+- Image: `nitinkapoor/localcamera-viewer:latest`
 - Network: **host** (easiest for WebRTC), or Bridge + publish 8080/1984/8555
 - Env: `CAMERA_IP=192.168.0.143`
 - Restart policy: *Unless stopped*

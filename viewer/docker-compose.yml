@@ -8,7 +8,7 @@
 # Docker Desktop for Mac/Windows (host mode isn't real there — use Option B).
 services:
   localcamera-viewer:
-    image: YOURUSER/localcamera-viewer:latest   # <-- your Docker Hub repo
+    image: nitinkapoor/localcamera-viewer:latest   # <-- your Docker Hub repo
     container_name: localcamera-viewer
     network_mode: host
     environment:
@@ -21,7 +21,7 @@ services:
 #
 # services:
 #   localcamera-viewer:
-#     image: YOURUSER/localcamera-viewer:latest
+#     image: nitinkapoor/localcamera-viewer:latest
 #     container_name: localcamera-viewer
 #     ports:
 #       - "8080:8080"          # web UI
