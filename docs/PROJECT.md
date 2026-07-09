@@ -459,3 +459,24 @@ Added a server-side human counter with a history graph, running in the container
 - Deps added: `@tensorflow/tfjs`, `@tensorflow/tfjs-backend-wasm`,
   `@tensorflow-models/coco-ssd`, `better-sqlite3`, `jpeg-js`. Model weights are
   gitignored + fetched by `viewer/models/fetch-model.sh`.
+
+---
+
+## 14. Milestone — clean WebRTC view + shipped to Portainer (2026-07-09)
+
+Now live and running on the Portainer host (`192.168.0.246:8080`).
+
+- **WebRTC view cleanup**: hid go2rtc's native `<video>` player controls
+  (`controls=false` + CSS `::-webkit-media-controls`), and **click/tap the video
+  → fullscreen** (shared `goFullscreen()` also used by the button; MJPEG image
+  too).
+- **Portainer deploy gotcha — stale `latest`**: redeploys kept starting the OLD
+  Alpine image and failed with `exec: "/sbin/tini": no such file` (Debian uses
+  `/usr/bin/tini`). Root cause: Docker won't re-pull a `latest` it already has
+  cached, so "redeploy"/"restart" reused the stale image. **Fix: publish and
+  deploy a versioned tag** (`nitinkapoor/localcamera-viewer:v2`, created from the
+  correct manifest via `docker buildx imagetools create`) — a never-seen tag
+  can't be served from cache, forcing a clean pull. Going forward: bump the tag
+  per build instead of relying on `latest`.
+- Added [`docs/STATUS.md`](./STATUS.md) as the consolidated current-state +
+  roadmap doc to build over.
