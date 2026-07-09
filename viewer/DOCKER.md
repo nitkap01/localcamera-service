@@ -9,8 +9,22 @@ LAN IP and open the page.
 | Variable | Required? | Default | What it does |
 |---|---|---|---|
 | `CAMERA_IP` | **Yes** | `192.168.0.143` | The camera's IP on your LAN. The only one you really must set. |
+| `WEBRTC_CANDIDATE` | Bridge only | _(unset)_ | `<docker-host-LAN-IP>:8555`. Needed in **bridge** networking so go2rtc advertises a reachable address — otherwise **phones fall back to slow MJPEG**. Leave unset with host networking. |
 | `PORT` | No | `8080` | Port for the web UI (the page you open in a browser). |
 | `GO2RTC_PORT` | No | `1984` | go2rtc API + WebRTC signaling. The browser is told this value via `/api/info`, so change it here (not just the port mapping) if you remap it. |
+
+### Why mobile WebRTC fails in a container
+
+WebRTC has to hand the browser an IP address to connect back to. Inside a
+bridge-network container, go2rtc only knows its *internal* Docker IP
+(e.g. `172.17.0.2`), which your phone can't reach — so the browser gives up on
+WebRTC and drops to MJPEG (works, but slow). Two ways to fix it:
+
+- **Host networking** (`network_mode: host`, Linux hosts): go2rtc sees the real
+  LAN IP automatically. Nothing else to set.
+- **Bridge networking**: publish ports 8080/1984/8555 **and** set
+  `WEBRTC_CANDIDATE=<docker-host-LAN-IP>:8555`. Required on Docker Desktop
+  (Mac/Windows), where host networking isn't real.
 
 The wifi settings (`WIFI_SSID`, `WIFI_PASSWORD`, `LAN_SUBNET`) are **not** used by
 the viewer — they only matter when flashing/finding the camera. Don't put them here.

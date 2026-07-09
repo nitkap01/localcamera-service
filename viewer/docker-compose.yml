@@ -1,8 +1,11 @@
 # Portainer stack for the localcamera-service viewer.
-# Paste this into Portainer > Stacks > Add stack, then set CAMERA_IP.
+# Paste into Portainer > Stacks > Add stack, edit the image + CAMERA_IP, deploy.
 #
-# host networking is the simplest path for WebRTC on a LAN: go2rtc sees the
-# real host IP, so ICE candidates "just work". Use it on a Linux Docker host.
+# WebRTC needs go2rtc to advertise an IP your phone can reach. Pick ONE option:
+#
+# ── Option A: host networking (simplest — Linux Docker host only) ─────────────
+# go2rtc sees the host's real LAN IP, so WebRTC "just works". Does NOT work on
+# Docker Desktop for Mac/Windows (host mode isn't real there — use Option B).
 services:
   localcamera-viewer:
     image: YOURUSER/localcamera-viewer:latest   # <-- your Docker Hub repo
@@ -10,29 +13,22 @@ services:
     network_mode: host
     environment:
       CAMERA_IP: "192.168.0.143"   # <-- REQUIRED: your camera's LAN IP
-      PORT: "8080"                 # viewer web UI
-      GO2RTC_PORT: "1984"          # go2rtc API + WebRTC signaling
     restart: unless-stopped
 
-# --- Bridge-mode alternative (if you can't use host networking) ---------------
-# The page (8080) and WebRTC signaling (1984) work with plain port mapping. But
-# WebRTC *media* needs go2rtc to advertise the host's LAN IP, so add a line to
-# viewer/go2rtc/go2rtc.yaml under `webrtc:` and rebuild the image:
-#     webrtc:
-#       listen: ":8555"
-#       candidates:
-#         - 192.168.0.10:8555   # <-- your Docker host's LAN IP
-# The MJPEG fallback works without any of this. Then deploy with:
+# ── Option B: bridge networking (Docker Desktop, or if you can't use host) ────
+# Publish the three ports AND tell go2rtc the host's LAN IP so phones can reach
+# the WebRTC media. Without WEBRTC_CANDIDATE, mobile falls back to slow MJPEG.
 #
 # services:
 #   localcamera-viewer:
 #     image: YOURUSER/localcamera-viewer:latest
 #     container_name: localcamera-viewer
 #     ports:
-#       - "8080:8080"
-#       - "1984:1984"
-#       - "8555:8555"
-#       - "8555:8555/udp"
+#       - "8080:8080"          # web UI
+#       - "1984:1984"          # go2rtc API / WebRTC signaling
+#       - "8555:8555"          # WebRTC media (tcp)
+#       - "8555:8555/udp"      # WebRTC media (udp)
 #     environment:
 #       CAMERA_IP: "192.168.0.143"
+#       WEBRTC_CANDIDATE: "192.168.0.10:8555"   # <-- the DOCKER HOST's LAN IP
 #     restart: unless-stopped
