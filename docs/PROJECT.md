@@ -350,3 +350,28 @@ Either runs on the Mac (or later a Raspberry Pi / mini server) on the LAN.
 1. Exact camera firmware version — does this 2016 repo fit, or do we use a fork?
 2. Your network values (§4 table).
 3. Phase 2 viewer: go2rtc vs custom app.
+
+---
+
+## 11. Milestone — containerize the viewer (2026-07-09)
+
+Packaged the viewer as a single Docker image so it can be pulled on Portainer
+instead of running from a laptop.
+
+- **Image** = `node:20-alpine` + `ffmpeg` + a downloaded static `go2rtc` binary.
+  Multi-arch via buildx (`TARGETARCH` → `go2rtc_linux_{amd64,arm64,arm}`), so it
+  runs on an x86 server or a Raspberry Pi.
+- **One process manager** — `docker-entrypoint.sh` runs go2rtc + `node server.js`
+  and exits if either dies (busybox `ash` has no `wait -n`, so it polls with
+  `kill -0`); `tini` reaps children; a `HEALTHCHECK` hits `/api/info`.
+- **Config is env-only** in the container (no `config.env`): `CAMERA_IP` (the one
+  you must set), `PORT` (8080), `GO2RTC_PORT` (1984). Wifi vars are irrelevant
+  to the viewer and deliberately excluded.
+- **Networking** — `network_mode: host` recommended so go2rtc's WebRTC ICE
+  candidates match the real LAN IP. Bridge mode works for page + MJPEG but needs
+  a `webrtc.candidates` line for WebRTC media.
+- Files: `viewer/Dockerfile`, `viewer/docker-entrypoint.sh`, `viewer/.dockerignore`,
+  `viewer/docker-compose.yml` (Portainer stack), `viewer/DOCKER.md` (build/push/deploy).
+- Verified statically (daemon was off locally): entrypoint `sh -n` clean; all
+  three go2rtc release URLs return HTTP 200. Actual `docker build`/push pending a
+  running Docker daemon.

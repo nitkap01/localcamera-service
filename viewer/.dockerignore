@@ -1,0 +1,9 @@
+node_modules
+go2rtc/go2rtc
+*.log
+.DS_Store
+README.md
+DOCKER.md
+docker-compose.yml
+Dockerfile
+.dockerignore

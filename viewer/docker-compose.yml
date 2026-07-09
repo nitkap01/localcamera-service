@@ -1,0 +1,38 @@
+# Portainer stack for the localcamera-service viewer.
+# Paste this into Portainer > Stacks > Add stack, then set CAMERA_IP.
+#
+# host networking is the simplest path for WebRTC on a LAN: go2rtc sees the
+# real host IP, so ICE candidates "just work". Use it on a Linux Docker host.
+services:
+  localcamera-viewer:
+    image: YOURUSER/localcamera-viewer:latest   # <-- your Docker Hub repo
+    container_name: localcamera-viewer
+    network_mode: host
+    environment:
+      CAMERA_IP: "192.168.0.143"   # <-- REQUIRED: your camera's LAN IP
+      PORT: "8080"                 # viewer web UI
+      GO2RTC_PORT: "1984"          # go2rtc API + WebRTC signaling
+    restart: unless-stopped
+
+# --- Bridge-mode alternative (if you can't use host networking) ---------------
+# The page (8080) and WebRTC signaling (1984) work with plain port mapping. But
+# WebRTC *media* needs go2rtc to advertise the host's LAN IP, so add a line to
+# viewer/go2rtc/go2rtc.yaml under `webrtc:` and rebuild the image:
+#     webrtc:
+#       listen: ":8555"
+#       candidates:
+#         - 192.168.0.10:8555   # <-- your Docker host's LAN IP
+# The MJPEG fallback works without any of this. Then deploy with:
+#
+# services:
+#   localcamera-viewer:
+#     image: YOURUSER/localcamera-viewer:latest
+#     container_name: localcamera-viewer
+#     ports:
+#       - "8080:8080"
+#       - "1984:1984"
+#       - "8555:8555"
+#       - "8555:8555/udp"
+#     environment:
+#       CAMERA_IP: "192.168.0.143"
+#     restart: unless-stopped

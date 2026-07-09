@@ -1,0 +1,71 @@
+# Running the viewer in Docker (Docker Hub → Portainer)
+
+One image bundles everything the viewer needs: **Node + Express**, **ffmpeg**
+(snapshot / record / MJPEG), and **go2rtc** (WebRTC). Point it at your camera's
+LAN IP and open the page.
+
+## Environment variables
+
+| Variable | Required? | Default | What it does |
+|---|---|---|---|
+| `CAMERA_IP` | **Yes** | `192.168.0.143` | The camera's IP on your LAN. The only one you really must set. |
+| `PORT` | No | `8080` | Port for the web UI (the page you open in a browser). |
+| `GO2RTC_PORT` | No | `1984` | go2rtc API + WebRTC signaling. The browser is told this value via `/api/info`, so change it here (not just the port mapping) if you remap it. |
+
+The wifi settings (`WIFI_SSID`, `WIFI_PASSWORD`, `LAN_SUBNET`) are **not** used by
+the viewer — they only matter when flashing/finding the camera. Don't put them here.
+
+## Ports
+
+| Port | Proto | Purpose |
+|---|---|---|
+| 8080 | tcp | Web UI + snapshot + record + MJPEG |
+| 1984 | tcp | go2rtc API / WebRTC signaling (WebSocket) |
+| 8555 | tcp + udp | WebRTC media |
+
+## Build & push to Docker Hub
+
+Multi-arch (works on an x86 server *and* an ARM Pi). Replace `YOURUSER`.
+
+```bash
+cd viewer
+docker login
+docker buildx create --use --name lcs 2>/dev/null || docker buildx use lcs
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t YOURUSER/localcamera-viewer:latest \
+  --push .
+```
+
+Single-arch (just your server's CPU) is simpler if you don't need ARM:
+
+```bash
+cd viewer
+docker build -t YOURUSER/localcamera-viewer:latest .
+docker push YOURUSER/localcamera-viewer:latest
+```
+
+## Deploy on Portainer
+
+**Option A — Stack (recommended).** Portainer → *Stacks* → *Add stack*, paste
+`docker-compose.yml` (edit the image name + `CAMERA_IP`), deploy. It uses
+`network_mode: host`, which is the simplest way to get WebRTC working on a LAN.
+
+**Option B — Container.** Portainer → *Containers* → *Add container*:
+- Image: `YOURUSER/localcamera-viewer:latest`
+- Network: **host** (easiest for WebRTC), or Bridge + publish 8080/1984/8555
+- Env: `CAMERA_IP=192.168.0.143`
+- Restart policy: *Unless stopped*
+
+Then open `http://<docker-host-ip>:8080` from your phone or laptop on the same wifi.
+
+## Notes
+
+- **WebRTC + Docker:** use host networking. In bridge mode the page and MJPEG
+  still work, but WebRTC media needs go2rtc to advertise the host IP — see the
+  commented bridge block in `docker-compose.yml`.
+- **Host must be Linux** for host networking to behave (a home server / Raspberry
+  Pi running Portainer is ideal). Docker Desktop on macOS/Windows doesn't map
+  host networking the same way.
+- The camera itself is unchanged — the container is just a client of its RTSP
+  stream, so nothing on the camera needs Docker.
