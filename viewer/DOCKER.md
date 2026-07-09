@@ -12,6 +12,17 @@ LAN IP and open the page.
 | `WEBRTC_CANDIDATE` | Bridge only | _(unset)_ | `<docker-host-LAN-IP>:8555`. Needed in **bridge** networking so go2rtc advertises a reachable address — otherwise **phones fall back to slow MJPEG**. Leave unset with host networking. |
 | `PORT` | No | `8080` | Port for the web UI (the page you open in a browser). |
 | `GO2RTC_PORT` | No | `1984` | go2rtc API + WebRTC signaling. The browser is told this value via `/api/info`, so change it here (not just the port mapping) if you remap it. |
+| `DB_PATH` | No | `/data/occupancy.db` | People-count SQLite DB. Mount a volume at `/data` (the compose file does) so the history survives redeploys. |
+| `COUNT_INTERVAL_MS` | No | `4000` | How often (ms) to grab a frame and count people. |
+| `COUNT_MIN_SCORE` | No | `0.45` | Detection confidence threshold (0–1). Higher = fewer false positives. |
+| `COUNT_ENABLE` | No | `1` | Set `0` to turn the people counter off entirely. |
+
+### People counter
+
+The **People** tab logs how many people are in frame over time. Detection runs
+server-side (TensorFlow.js `coco-ssd` on the WASM backend — offline, no cloud,
+any CPU/arch) every `COUNT_INTERVAL_MS`, and each `{count, timestamp}` is stored
+in SQLite at `DB_PATH`. Keep the `/data` volume mounted so history persists.
 
 ### Why mobile WebRTC fails in a container
 

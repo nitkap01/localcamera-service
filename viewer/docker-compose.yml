@@ -13,7 +13,12 @@ services:
     network_mode: host
     environment:
       CAMERA_IP: "192.168.0.143"   # <-- REQUIRED: your camera's LAN IP
+    volumes:
+      - lcs-data:/data             # people-count history (SQLite) — survives redeploys
     restart: unless-stopped
+
+volumes:
+  lcs-data:
 
 # ── Option B: bridge networking (Docker Desktop, or if you can't use host) ────
 # Publish the three ports AND tell go2rtc the host's LAN IP so phones can reach
@@ -31,4 +36,6 @@ services:
 #     environment:
 #       CAMERA_IP: "192.168.0.143"
 #       WEBRTC_CANDIDATE: "192.168.0.10:8555"   # <-- the DOCKER HOST's LAN IP
+#     volumes:
+#       - lcs-data:/data
 #     restart: unless-stopped

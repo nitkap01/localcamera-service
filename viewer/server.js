@@ -20,6 +20,17 @@ const CAM_IP = loadCameraIp();
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const GO2RTC_PORT = parseInt(process.env.GO2RTC_PORT || '1984', 10);
 
+// --- human counter (person detection -> SQLite) ---
+const { createCounter } = require('./counter');
+const COUNT_ENABLE = process.env.COUNT_ENABLE !== '0';
+const counter = COUNT_ENABLE ? createCounter({
+  dbPath: process.env.DB_PATH || path.join(__dirname, 'data', 'occupancy.db'),
+  frameUrl: process.env.COUNT_FRAME_URL || `http://127.0.0.1:${GO2RTC_PORT}/api/frame.jpeg?src=nk-camera`,
+  modelDir: path.join(__dirname, 'models', 'coco-ssd'),
+  intervalMs: parseInt(process.env.COUNT_INTERVAL_MS || '4000', 10),
+  minScore: parseFloat(process.env.COUNT_MIN_SCORE || '0.45'),
+}) : null;
+
 // The camera serves only the HD stream (ch0_0). "SD" = HD downscaled by ffmpeg
 // (the camera's native low substream is corrupt on this firmware).
 const rtspUrl = () => `rtsp://${CAM_IP}:554/ch0_0.h264`;
@@ -117,7 +128,13 @@ app.get('/record', (req, res) => {
   req.on('close', () => { try { ff.kill('SIGKILL'); } catch (e) { /* */ } });
 });
 
-app.get('/api/info', (req, res) => res.json({ camera: CAM_IP, go2rtcPort: GO2RTC_PORT, rtsp: rtspUrl() }));
+app.get('/api/info', (req, res) => res.json({ camera: CAM_IP, go2rtcPort: GO2RTC_PORT, rtsp: rtspUrl(), counter: COUNT_ENABLE }));
+
+// --- human counter API ---
+app.get('/api/occupancy/now', (req, res) => res.json(counter ? counter.now() : { ts: null, count: null }));
+app.get('/api/occupancy/status', (req, res) => res.json(counter ? counter.status() : { ready: false, running: false, disabled: true }));
+app.get('/api/occupancy', (req, res) => res.json(counter ? counter.series(req.query.range) : { range: 'hour', points: [], disabled: true }));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, '0.0.0.0', () => {
@@ -125,4 +142,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  camera : ${CAM_IP}`);
   console.log(`  local  : http://localhost:${PORT}`);
   console.log(`  webrtc : via go2rtc on :${GO2RTC_PORT}`);
+  if (counter) {
+    counter.start()
+      .then(() => console.log('  counter: detecting people (coco-ssd/wasm)'))
+      .catch((e) => console.error('  counter: failed to start —', e.message));
+  }
 });

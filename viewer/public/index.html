@@ -41,6 +41,21 @@
   .slider label { font-size:12px; color:var(--mut); display:flex; justify-content:space-between; }
   .slider input[type=range] { width:100%; accent-color:var(--accent); }
   @media (max-width:520px){ button,select{ padding:9px 11px; } header .meta{ display:none; } .slider{ min-width:44%; } }
+  /* tabs + people view */
+  .tabs { display:flex; gap:6px; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); }
+  .tabs button { background:transparent; border:1px solid transparent; color:var(--mut); border-radius:9px; padding:7px 16px; }
+  .tabs button.on { color:var(--fg); background:#20242b; border-color:var(--line); }
+  #liveview { flex:1; min-height:0; display:flex; flex-direction:column; }
+  #peopleview { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:16px; padding:18px; }
+  #liveview[hidden], #peopleview[hidden] { display:none; }
+  .bigcount { display:flex; align-items:baseline; gap:12px; }
+  .bigcount .num { font-size:64px; font-weight:700; line-height:1; color:var(--fg); font-variant-numeric:tabular-nums; }
+  .bigcount .num.live { color:var(--ok); }
+  .bigcount .lbl { color:var(--mut); }
+  .statrow { display:flex; gap:22px; align-items:center; color:var(--mut); font-size:13px; flex-wrap:wrap; }
+  .statrow b { color:var(--fg); font-size:17px; }
+  .chartwrap { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .chartwrap svg { width:100%; height:auto; display:block; }
 </style>
 </head>
 <body>
@@ -50,6 +65,12 @@
     <span class="meta" id="meta"></span>
   </header>
 
+  <div class="tabs">
+    <button data-tab="live" class="on">📺 Live</button>
+    <button data-tab="people">👥 People</button>
+  </div>
+
+  <div id="liveview">
   <div class="stage" id="stagewrap">
     <div id="stage"></div>
     <div class="badge" id="badge"></div>
@@ -86,6 +107,23 @@
     <button id="logo">🚫 Hide YI</button>
     <button id="fit">⤢ Fit</button>
     <button id="full">⛶ Fullscreen</button>
+  </div>
+  </div><!-- /liveview -->
+
+  <div id="peopleview" hidden>
+    <div class="bigcount"><span class="num" id="pcount">–</span><span class="lbl">people in frame now</span></div>
+    <div class="statrow">
+      <div>peak <b id="ppeak">–</b></div>
+      <div>avg <b id="pavg">–</b></div>
+      <div>samples <b id="psamples">–</b></div>
+    </div>
+    <div class="grp" style="align-self:flex-start">
+      <small>range</small>
+      <button data-range="hour" class="rbtn on">Hour</button>
+      <button data-range="day" class="rbtn">Day</button>
+      <button data-range="week" class="rbtn">Week</button>
+    </div>
+    <div class="chartwrap"><div id="chart"></div></div>
   </div>
 
 <script type="module">
@@ -220,6 +258,63 @@
     }
     applyCss();
   };
+
+  // ---- tabs: Live / People ----
+  let tab = 'live', prange = 'hour', peopleTimer = null;
+  const liveView = document.getElementById('liveview');
+  const peopleView = document.getElementById('peopleview');
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+  function setTab(t) {
+    tab = t;
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    liveView.hidden = t !== 'live';
+    peopleView.hidden = t !== 'people';
+    if (t === 'live') { stopPeople(); render(); }               // resume the stream
+    else { clearInterval(rtcTimer); rtcTimer = null; stage.innerHTML = ''; startPeople(); } // stop stream, save CPU/bandwidth
+  }
+  function startPeople() { loadNow(); loadSeries(); clearInterval(peopleTimer); peopleTimer = setInterval(() => { loadNow(); loadSeries(); }, 5000); }
+  function stopPeople() { clearInterval(peopleTimer); peopleTimer = null; }
+  function loadNow() {
+    fetch('/api/occupancy/now').then(r => r.json()).then(d => {
+      const el = document.getElementById('pcount');
+      el.textContent = d.count == null ? '–' : d.count;
+      el.classList.toggle('live', d.count > 0);
+    }).catch(() => {});
+  }
+  document.querySelectorAll('.rbtn').forEach(b => b.onclick = () => {
+    prange = b.dataset.range;
+    document.querySelectorAll('.rbtn').forEach(x => x.classList.toggle('on', x === b));
+    loadSeries();
+  });
+  function loadSeries() {
+    fetch(`/api/occupancy?range=${prange}`).then(r => r.json()).then(d => {
+      document.getElementById('ppeak').textContent = d.peak == null ? '–' : d.peak;
+      document.getElementById('pavg').textContent = d.avg == null ? '–' : d.avg;
+      document.getElementById('psamples').textContent = d.samples || 0;
+      drawChart(d);
+    }).catch(() => {});
+  }
+  // hand-rolled SVG chart: peak people per time bucket (no external chart lib)
+  function drawChart(d) {
+    const host = document.getElementById('chart');
+    const pts = d.points || [];
+    const W = 820, H = 260, padL = 32, padR = 12, padT = 12, padB = 26;
+    if (!pts.length) { host.innerHTML = `<svg viewBox="0 0 ${W} ${H}"><text x="${W/2}" y="${H/2}" fill="#8b95a3" text-anchor="middle" font-size="14">no data yet — detecting…</text></svg>`; return; }
+    const t0 = d.since, t1 = d.now, ymax = Math.max(1, d.peak || 1);
+    const X = t => padL + (W - padL - padR) * (t - t0) / (t1 - t0 || 1);
+    const Y = v => padT + (H - padT - padB) * (1 - v / ymax);
+    let area = `M ${X(pts[0].t).toFixed(1)} ${Y(0).toFixed(1)}`;
+    pts.forEach(p => area += ` L ${X(p.t).toFixed(1)} ${Y(p.mx).toFixed(1)}`);
+    area += ` L ${X(pts[pts.length - 1].t).toFixed(1)} ${Y(0).toFixed(1)} Z`;
+    const line = pts.map((p, i) => `${i ? 'L' : 'M'} ${X(p.t).toFixed(1)} ${Y(p.mx).toFixed(1)}`).join(' ');
+    const step = Math.max(1, Math.ceil(ymax / 5));
+    let grid = '', yl = '';
+    for (let v = 0; v <= ymax; v += step) { grid += `<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${W - padR}" y2="${Y(v).toFixed(1)}" stroke="#262b33"/>`; yl += `<text x="${padL - 6}" y="${(Y(v) + 4).toFixed(1)}" fill="#8b95a3" font-size="11" text-anchor="end">${v}</text>`; }
+    const fmt = ts => { const t = new Date(ts); return d.range === 'week' ? (t.getMonth() + 1) + '/' + t.getDate() : t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+    let xl = ''; const N = 5;
+    for (let i = 0; i <= N; i++) { const ts = t0 + (t1 - t0) * i / N; xl += `<text x="${X(ts).toFixed(1)}" y="${H - 8}" fill="#8b95a3" font-size="11" text-anchor="${i === 0 ? 'start' : i === N ? 'end' : 'middle'}">${fmt(ts)}</text>`; }
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}">${grid}<path d="${area}" fill="rgba(61,162,255,.18)"/><path d="${line}" fill="none" stroke="#3da2ff" stroke-width="2"/>${yl}${xl}</svg>`;
+  }
 
   fetch('/api/info').then(r=>r.json()).then(d=>{ go2rtcPort = d.go2rtcPort || 1984; document.getElementById('meta').textContent = d.camera; render(); }).catch(render);
 </script>

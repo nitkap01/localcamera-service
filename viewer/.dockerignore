@@ -1,5 +1,7 @@
 node_modules
 go2rtc/go2rtc
+models/coco-ssd
+data
 *.log
 .DS_Store
 README.md

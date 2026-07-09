@@ -425,3 +425,37 @@ Asked to add an on/off toggle for the blue LED. Traced the mechanism; there is
 - **Next step:** a bounded, reboot-reversible live test — write one candidate
   value while watching the physical LED, revert immediately. Only then wire a
   `led.sh on|off` + a viewer button. Not attempted yet (needs eyes on the cam).
+
+---
+
+## 13. Milestone — people counter (2026-07-09)
+
+Added a server-side human counter with a history graph, running in the container.
+
+- **Detection** (`viewer/counter.js`): every `COUNT_INTERVAL_MS` (default 4s) it
+  pulls a frame from go2rtc (`/api/frame.jpeg`), decodes it with `jpeg-js`, and
+  counts `person` boxes with **coco-ssd (TensorFlow.js)** above `COUNT_MIN_SCORE`
+  (default 0.45). Runs server-side so it logs 24/7 regardless of who's watching.
+- **WASM backend, not native TF** — `@tensorflow/tfjs` + `tfjs-backend-wasm`, so
+  there's no native TensorFlow to compile and it runs identically on amd64/arm64.
+  The model (`ssdlite_mobilenet_v2`, ~17MB) is loaded from local files via a
+  custom IO handler = fully offline. `~87ms/frame` on CPU — trivial at 4s.
+- **Storage**: SQLite via `better-sqlite3` at `DB_PATH` (`/data/occupancy.db`),
+  one row `{ts, count}` per sample, WAL mode. Bucket queries floor with
+  `ts - ts % bucket` (integer modulo — `(ts/b)*b` did NOT floor because the bind
+  made it float division).
+- **API**: `GET /api/occupancy/now`, `/api/occupancy/status`,
+  `/api/occupancy?range=hour|day|week` (time-bucketed max/avg + peak/avg/samples).
+- **UI**: a Live/People tab bar; the People tab shows the current count, peak/avg
+  stats, range buttons, and a hand-rolled SVG chart (no chart lib / no CDN).
+  Switching to People stops the live stream to save CPU/bandwidth.
+- **Docker**: base switched Alpine → `node:20-slim` (glibc) so `better-sqlite3`
+  installs cleanly; multi-stage (builder has the toolchain + fetches the model,
+  runtime stays lean); `/data` volume for DB persistence.
+- **Node version gotcha**: `better-sqlite3` is ABI-locked to the Node it built
+  for. Local nvm was flipping between v20/v22/v25 across shells; the native
+  module fails to load on a mismatch. Dev/run pinned to Node 20 to match the
+  `node:20-slim` image.
+- Deps added: `@tensorflow/tfjs`, `@tensorflow/tfjs-backend-wasm`,
+  `@tensorflow-models/coco-ssd`, `better-sqlite3`, `jpeg-js`. Model weights are
+  gitignored + fetched by `viewer/models/fetch-model.sh`.
