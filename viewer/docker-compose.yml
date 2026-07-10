@@ -8,7 +8,7 @@
 # Docker Desktop for Mac/Windows (host mode isn't real there — use Option B).
 services:
   localcamera-viewer:
-    image: nitinkapoor/localcamera-viewer:v3   # <-- bump the tag per build; Portainer caches :latest
+    image: nitinkapoor/localcamera-viewer:v4   # <-- bump the tag per build; Portainer caches :latest
     container_name: localcamera-viewer
     network_mode: host
     environment:

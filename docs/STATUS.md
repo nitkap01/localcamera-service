@@ -57,7 +57,7 @@ on Portainer.
 
 **Container** (Docker Hub): `nitinkapoor/localcamera-viewer` — multi-arch
 (`linux/amd64` + `linux/arm64`), Debian base (`node:20-slim`).
-- **Deploy the versioned tag** `:v3`, not `:latest`. Portainer caches `latest`
+- **Deploy the versioned tag** `:v4`, not `:latest`. Portainer caches `latest`
   and won't re-pull it, which served a stale image (that's what caused the
   `/sbin/tini` start error). A fresh tag forces a clean pull. Bump the tag on
   each new build.
@@ -66,7 +66,7 @@ on Portainer.
 ```yaml
 services:
   localcamera-viewer:
-    image: nitinkapoor/localcamera-viewer:v3
+    image: nitinkapoor/localcamera-viewer:v4
     container_name: localcamera-viewer
     network_mode: host
     environment:

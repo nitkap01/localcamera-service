@@ -112,7 +112,7 @@ docker login
 docker buildx create --use --name lcs 2>/dev/null || docker buildx use lcs
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t nitinkapoor/localcamera-viewer:v3 \
+  -t nitinkapoor/localcamera-viewer:v4 \
   -t nitinkapoor/localcamera-viewer:latest \
   --push .
 ```
@@ -121,8 +121,8 @@ Single-arch (just your server's CPU) is simpler if you don't need ARM:
 
 ```bash
 cd viewer
-docker build -t nitinkapoor/localcamera-viewer:v3 .
-docker push nitinkapoor/localcamera-viewer:v3
+docker build -t nitinkapoor/localcamera-viewer:v4 .
+docker push nitinkapoor/localcamera-viewer:v4
 ```
 
 > The Dockerfile declares `ARG TARGETARCH` **without a default**. Adding one
