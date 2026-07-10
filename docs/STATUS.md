@@ -25,6 +25,11 @@ on Portainer.
   to MJPEG if WebRTC/MSE don't start.
 - Clean video surface — go2rtc's native player controls are hidden; **click/tap
   the video → fullscreen** (real iOS fullscreen too).
+- **Live overlay** (browser-side, three independent toggles): **People** boxes,
+  **Hands** (gesture name + handedness), **Face** (strongest expression) — every
+  label carries a probability score. Runs on the displayed frame, so boxes line
+  up with the video and the server does no extra work. Live display only; nothing
+  is logged. Models load lazily on first toggle and are served from this host.
 - **Capture**: snapshot (JPEG) and record (MP4, 10–60s).
 - **Adjust**: brightness / contrast / saturation / hue, rotate, mirror, HD/SD,
   and hide the burned-in "YI" watermark (`delogo`).
@@ -111,6 +116,17 @@ networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
   value buildx injects, so every arch silently gets amd64 binaries — confirmed:
   the published `:v2` arm64 image had an **x86-64 go2rtc** inside it. Fixed in
   `:v3`; the build now fails loudly on an unknown arch instead of guessing.
+- **Overlay runs in the browser, on purpose.** Gestures are sub-second events; the
+  server's 4s sampling can't see them, and server-computed boxes trail the video
+  by 300–500ms. Browser-side inference is frame-aligned and free for the server.
+  MediaPipe Tasks is browser-only anyway (DOM + WebGL). The counter is separate
+  and unchanged.
+- **iOS + overlay**: a fullscreened `<video>` goes to the native iOS player, which
+  paints above everything and can't show an overlay — so when any layer is on,
+  fullscreen switches to a CSS full-window mode. With layers off, the old
+  behaviour is untouched.
+- **Overlay pauses while rotated**: CSS rotation moves the picture but not the
+  layout box, so boxes would sit crooked. Mirror is handled (x is flipped).
 - **SQLite bucketing**: floor with `ts - ts % bucket` (integer modulo);
   `(ts/b)*b` didn't floor due to float binding.
 - **Docker base**: Alpine → `node:20-slim` (glibc) so `better-sqlite3` installs
@@ -150,8 +166,9 @@ viewer/               the web viewer + counter
   counter.js          sample loop -> detector -> SQLite; runtime engine swap
   detectors/          cocossd.js (tfjs/WASM) + yolo.js (YOLOv10n/onnxruntime)
   public/index.html   UI: Live + People tabs, controls, engine switch, SVG chart
+  public/overlay.js   browser-side overlay: people / hands / face + scores
   go2rtc/             WebRTC (RTSP -> WebRTC) config + binary (gitignored)
-  models/             fetch-model.sh (coco-ssd + yolov10n weights; gitignored)
+  models/             fetch-model.sh (coco-ssd, yolov10n, mediapipe; gitignored)
   Dockerfile          multi-stage Debian build (deps + model + go2rtc)
   docker-compose.yml  Portainer stack (host + bridge options)
   DOCKER.md           build / push / deploy + env reference

@@ -2,6 +2,7 @@ node_modules
 go2rtc/go2rtc
 models/coco-ssd
 models/yolo
+models/mediapipe
 data
 *.log
 .DS_Store

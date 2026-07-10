@@ -19,6 +19,7 @@ viewer/go2rtc/go2rtc
 # --- people counter: model weights (fetch via viewer/models/fetch-model.sh) + local db ---
 viewer/models/coco-ssd/
 viewer/models/yolo/
+viewer/models/mediapipe/
 viewer/data/
 
 # --- os / editor junk ---

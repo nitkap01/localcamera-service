@@ -50,6 +50,33 @@ stays readable when you switch. Switching does **not** discard past data.
 /api/occupancy/detector/{cocossd|yolo}` switches it. There's no auth — the
 viewer is LAN-only by design.
 
+### Live overlay (People / Hands / Face)
+
+The Live tab has three independent toggles that draw boxes over the video, each
+label carrying a probability score:
+
+| Toggle | Draws | Model |
+|---|---|---|
+| **People** | person boxes — `person 0.91` | efficientdet_lite0 |
+| **Hands** | hand box + landmarks + gesture — `Right · Victory 0.94` | gesture_recognizer |
+| **Face** | face box + strongest expression — `mouth smile left 0.96` | face_landmarker |
+
+**No env vars.** This runs in *your browser*, on the frame being displayed, so
+boxes line up with the video and the server does no extra work. The MediaPipe
+runtime and models are served from the container (`/vendor/mediapipe`,
+`/models/mediapipe`) — nothing is fetched from a CDN, so it works on a LAN with
+no internet. Each model (7–8MB) downloads the first time you enable its layer.
+
+This is **live display only — nothing is recorded**. The server-side people
+counter above is entirely separate and keeps logging whether or not a browser
+is open.
+
+Two behaviours worth knowing: with any layer on, fullscreen becomes a CSS
+full-window mode (iOS's native video player paints over an overlay and can't show
+it), and the overlay pauses while the picture is **rotated** — boxes would sit
+crooked, since CSS rotation moves the picture but not its layout box. Mirror
+works fine.
+
 ### Why mobile WebRTC fails in a container
 
 WebRTC has to hand the browser an IP address to connect back to. Inside a

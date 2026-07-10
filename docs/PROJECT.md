@@ -574,3 +574,74 @@ one it runs on (**236MB → 31MB**).
 | Image contents | `ort: linux/<arch>` only; go2rtc `e_machine` matches arch |
 
 Task doc: [`tasks/2026-07-10/yolo-detection-mode.md`](./tasks/2026-07-10/yolo-detection-mode.md).
+
+---
+
+## 16. Milestone — live detection overlay (2026-07-10)
+
+**Goal:** "bounding boxes with a toggle, with hand gestures and face gestures too,
+with probability scores as well." Agreed with the user: **three** toggles
+(People / Hands / Face), **live display only, no logging**, and "face gestures"
+means facial **expressions** (those carry scores natively).
+
+### Where it runs, and why that was the whole decision
+
+The server counter samples **one frame every 4 seconds**. A gesture lasts under a
+second, so that loop simply cannot see one. And boxes computed on the server
+arrive 300–500ms after the frame they describe, so they visibly trail anyone who
+moves. Pushing the server loop to 10–15fps means person + hand + face inference
+on every frame — roughly a saturated core or two on the Portainer box.
+
+So the overlay runs **in the browser**, on the exact `<video>` frame being shown:
+boxes are pixel-aligned and the server pays nothing. MediaPipe Tasks is
+browser-only regardless (it needs a DOM and WebGL); putting it in Node would be a
+rewrite from ONNX parts, not a config flag. **The server-side people counter is
+untouched** — it keeps logging with no browser open.
+
+### Build notes
+
+- `@mediapipe/tasks-vision` (pinned `0.10.35`), three models (~18MB total):
+  `efficientdet_lite0` (person boxes), `gesture_recognizer`, `face_landmarker`.
+- Dropped the separate `hand_landmarker` (7.4MB): the **GestureRecognizer already
+  returns hand landmarks**, so it was pure duplication.
+- Runtime and models are served from this host (`/vendor/mediapipe`,
+  `/models/mediapipe`), like the server-side models — no CDN, works offline on a
+  LAN. Models load **lazily, per toggle**; nothing downloads until you switch a
+  layer on. GPU delegate with a CPU fallback.
+- No Dockerfile change: the runtime rides in `node_modules`, the models come from
+  the existing build-stage `fetch-model.sh`.
+
+### Two UI truths worth writing down
+
+- **iOS**: a fullscreened `<video>` is handed to the native iOS player, which
+  paints above everything and cannot show an overlay. So *when a layer is on*,
+  fullscreen becomes a CSS full-window mode. With layers off, the tap-to-fullscreen
+  behaviour from §14 is untouched.
+- **Rotation**: CSS rotation moves the picture but not its layout box, so boxes
+  would sit crooked. The overlay pauses and says so, rather than drawing lies.
+  Mirror *is* handled properly (x is flipped).
+
+### Verified
+
+Driven through **real headless Chrome** against the actual `createOverlay`, with
+`CanvasRenderingContext2D.fillText` intercepted so the assertions read the labels
+the overlay genuinely draws — not a reimplementation of them.
+
+| Image | people | hands | face | labels drawn |
+|---|---|---|---|---|
+| camera frame (distant person) | ✅ | – | – | `person 0.91` |
+| MediaPipe `victory.jpg` | ✅ | ✅ | ✅ | `person 0.82`, `Right · Victory 0.94`, `eye look out left 0.62` |
+| MediaPipe `portrait.jpg` | ✅ | – | ✅ | `person 0.95`, `mouth smile left 0.96` |
+
+Also: canvas geometry matches the letterboxed picture; the GPU→CPU fallback works
+(headless ran `--disable-gpu`); the container serves `.mjs` as
+`application/javascript` and `.wasm` as `application/wasm` (a wrong MIME makes the
+browser refuse the module outright); the counter still reports
+`running: true, lastErr: null`.
+
+A first pass at the harness used `--dump-dom`, which raced the async model load
+and reported `RUNNING`. Replaced with a tiny POST collector so the page reports
+when it is actually finished — a flaw in the test, not the code, but worth not
+repeating.
+
+Task doc: [`tasks/2026-07-10/detection-overlay.md`](./tasks/2026-07-10/detection-overlay.md).

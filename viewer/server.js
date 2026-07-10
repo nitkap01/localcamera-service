@@ -146,6 +146,12 @@ app.post('/api/occupancy/detector/:name', (req, res) => {
     .catch((e) => res.status(400).json({ error: e.message }));
 });
 
+// Assets for the browser-side detection overlay. Served from this host so the
+// viewer keeps working on a LAN with no internet (nothing comes from a CDN).
+const staticOpts = { maxAge: '7d', immutable: true };   // runtime + models are version-pinned
+app.use('/vendor/mediapipe', express.static(path.join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision'), staticOpts));
+app.use('/models/mediapipe', express.static(path.join(__dirname, 'models', 'mediapipe'), staticOpts));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, '0.0.0.0', () => {

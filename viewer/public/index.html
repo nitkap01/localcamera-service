@@ -26,8 +26,15 @@
   #stage video::-webkit-media-controls-enclosure,
   #stage video::-webkit-media-controls-panel { display:none !important; -webkit-appearance:none; }
   .cover #stage video, .cover #stage img, .cover #stage video-stream { width:100%; height:100%; object-fit:cover; }
-  .badge { position:absolute; top:10px; left:10px; background:rgba(0,0,0,.55); padding:3px 9px; border-radius:999px; font-size:11px; color:var(--mut); letter-spacing:.04em; max-width:80%; }
-  .recbadge { position:absolute; top:10px; right:10px; display:none; align-items:center; gap:6px; background:rgba(0,0,0,.6); padding:4px 10px; border-radius:999px; font-size:12px; color:#fff; }
+  /* detection overlay: sits exactly over the picture, never eats clicks */
+  #overlay { position:absolute; display:none; pointer-events:none; z-index:2; }
+  /* iOS hands a fullscreened <video> to its native player, which can't show an
+     overlay — so when boxes are on we go full-window with CSS instead. */
+  .stage.cssfs { position:fixed; inset:0; z-index:9999; background:#000; }
+  #ovnote { color:var(--mut); align-self:center; }
+  .dbtn:disabled { opacity:.5; cursor:default; }
+  .badge { position:absolute; top:10px; left:10px; background:rgba(0,0,0,.55); padding:3px 9px; border-radius:999px; font-size:11px; color:var(--mut); letter-spacing:.04em; max-width:80%; z-index:3; }
+  .recbadge { position:absolute; top:10px; right:10px; display:none; align-items:center; gap:6px; background:rgba(0,0,0,.6); padding:4px 10px; border-radius:999px; font-size:12px; color:#fff; z-index:3; }
   .recbadge.on { display:flex; }
   .recbadge .dot { background:var(--rec); animation:blink 1s infinite; }
   @keyframes blink { 50%{opacity:.25} }
@@ -81,6 +88,7 @@
   <div id="liveview">
   <div class="stage" id="stagewrap">
     <div id="stage"></div>
+    <canvas id="overlay"></canvas>
     <div class="badge" id="badge"></div>
     <div class="recbadge" id="recbadge"><span class="dot"></span><span id="rectime">REC</span></div>
   </div>
@@ -115,6 +123,13 @@
     <button id="logo">🚫 Hide YI</button>
     <button id="fit">⤢ Fit</button>
     <button id="full">⛶ Fullscreen</button>
+    <div class="grp">
+      <small>detect</small>
+      <button data-layer="people" class="dbtn">🧍 People</button>
+      <button data-layer="hands" class="dbtn">✋ Hands</button>
+      <button data-layer="face" class="dbtn">🙂 Face</button>
+    </div>
+    <small id="ovnote"></small>
   </div>
   </div><!-- /liveview -->
 
@@ -144,6 +159,7 @@
 
 <script type="module">
   import { VideoRTC } from './video-rtc.js';
+  import { createOverlay } from './overlay.js';
   if (!customElements.get('video-stream')) customElements.define('video-stream', VideoRTC);
 
   const state = { mode:'rtc', q:'hd', rot:0, mirror:false, hidelogo:false, cover:false, b:1, c:1, s:1, hue:0 };
@@ -255,6 +271,9 @@
   function goFullscreen() {
     const wrap = document.getElementById('stagewrap');
     const vid = stage.querySelector('video');   // the WebRTC/MSE inner <video>, if any
+    // With boxes on, native fullscreen would hide them (iOS shows its own player,
+    // and it paints above everything), so go full-window with CSS instead.
+    if (overlay.anyOn()) { wrap.classList.toggle('cssfs'); return; }
     // iOS Safari can't fullscreen a <div>/<img> — only a <video> via webkitEnterFullscreen.
     if (!document.fullscreenEnabled && vid && vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; }
     if (wrap.requestFullscreen) { wrap.requestFullscreen().catch(() => { if (vid && vid.webkitEnterFullscreen) vid.webkitEnterFullscreen(); }); }
@@ -262,6 +281,34 @@
     else if (vid && vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); }
   }
   document.getElementById('full').onclick = goFullscreen;
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') document.getElementById('stagewrap').classList.remove('cssfs'); });
+
+  // --- detection overlay (browser-side; the server counter is separate) ---
+  const ovnote = document.getElementById('ovnote');
+  const overlay = createOverlay({
+    stage,
+    canvas: document.getElementById('overlay'),
+    getRot: () => state.rot,
+    getMirror: () => state.mirror,
+    getCover: () => state.cover,
+    onNote: (m) => { ovnote.textContent = m || ''; },
+  });
+  document.querySelectorAll('.dbtn').forEach(b => b.onclick = async () => {
+    const layer = b.dataset.layer, on = !b.classList.contains('on');
+    const label = b.textContent;
+    b.disabled = true;
+    if (on) { b.textContent = 'loading…'; ovnote.textContent = 'fetching model (first time only)'; }
+    try {
+      await overlay.setLayer(layer, on);
+      b.classList.toggle('on', on);
+      ovnote.textContent = '';
+    } catch (e) {
+      ovnote.textContent = 'overlay failed: ' + e.message;
+    } finally {
+      b.textContent = label;
+      b.disabled = false;
+    }
+  });
   function updateBadge(){ badge.textContent = `${state.mode==='rtc'?'WebRTC':'MJPEG'} · ${state.q.toUpperCase()}` + (state.rot?` · ${state.rot}°`:'') + (state.mirror?' · mir':'') + (state.hidelogo?' · no-YI':''); }
 
   // adjust panel
