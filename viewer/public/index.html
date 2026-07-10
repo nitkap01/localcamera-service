@@ -61,6 +61,9 @@
   .statrow b { color:var(--fg); font-size:17px; }
   .chartwrap { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; }
   .chartwrap svg { width:100%; height:auto; display:block; }
+  .enginerow { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .enginerow small { color:var(--mut); }
+  .ebtn:disabled { opacity:.5; cursor:default; }
 </style>
 </head>
 <body>
@@ -127,6 +130,14 @@
       <button data-range="hour" class="rbtn on">Hour</button>
       <button data-range="day" class="rbtn">Day</button>
       <button data-range="week" class="rbtn">Week</button>
+    </div>
+    <div class="enginerow">
+      <div class="grp">
+        <small>engine</small>
+        <button data-engine="cocossd" class="ebtn">coco-ssd</button>
+        <button data-engine="yolo" class="ebtn">YOLO</button>
+      </div>
+      <small id="enote"></small>
     </div>
     <div class="chartwrap"><div id="chart"></div></div>
   </div>
@@ -283,7 +294,7 @@
     if (t === 'live') { stopPeople(); render(); }               // resume the stream
     else { clearInterval(rtcTimer); rtcTimer = null; stage.innerHTML = ''; startPeople(); } // stop stream, save CPU/bandwidth
   }
-  function startPeople() { loadNow(); loadSeries(); clearInterval(peopleTimer); peopleTimer = setInterval(() => { loadNow(); loadSeries(); }, 5000); }
+  function startPeople() { loadNow(); loadSeries(); loadStatus(); clearInterval(peopleTimer); peopleTimer = setInterval(() => { loadNow(); loadSeries(); loadStatus(); }, 5000); }
   function stopPeople() { clearInterval(peopleTimer); peopleTimer = null; }
   function loadNow() {
     fetch('/api/occupancy/now').then(r => r.json()).then(d => {
@@ -296,6 +307,27 @@
     prange = b.dataset.range;
     document.querySelectorAll('.rbtn').forEach(x => x.classList.toggle('on', x === b));
     loadSeries();
+  });
+  // detection engine: the server does the detecting, so this just tells it which to use
+  const ebtns = document.querySelectorAll('.ebtn');
+  const enote = document.getElementById('enote');
+  const markEngine = (name) => ebtns.forEach(b => b.classList.toggle('on', b.dataset.engine === name));
+  function loadStatus() {
+    fetch('/api/occupancy/status').then(r => r.json()).then(d => {
+      if (d.detector) markEngine(d.detector);
+      if (!enote.dataset.busy) enote.textContent = d.lastErr ? d.lastErr : (d.backend || '');
+    }).catch(() => {});
+  }
+  ebtns.forEach(b => b.onclick = () => {
+    if (b.classList.contains('on')) return;
+    ebtns.forEach(x => x.disabled = true);
+    enote.dataset.busy = '1';
+    enote.textContent = `switching to ${b.textContent}…`;   // first switch loads the model
+    fetch('/api/occupancy/detector/' + b.dataset.engine, { method: 'POST' })
+      .then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error || 'switch failed'); return d; }))
+      .then(d => { markEngine(d.detector); enote.textContent = d.backend || ''; loadNow(); loadSeries(); })
+      .catch(e => { enote.textContent = e.message; })
+      .finally(() => { delete enote.dataset.busy; ebtns.forEach(x => x.disabled = false); });
   });
   function loadSeries() {
     fetch(`/api/occupancy?range=${prange}`).then(r => r.json()).then(d => {

@@ -27,8 +27,11 @@ const counter = COUNT_ENABLE ? createCounter({
   dbPath: process.env.DB_PATH || path.join(__dirname, 'data', 'occupancy.db'),
   frameUrl: process.env.COUNT_FRAME_URL || `http://127.0.0.1:${GO2RTC_PORT}/api/frame.jpeg?src=nk-camera`,
   modelDir: path.join(__dirname, 'models', 'coco-ssd'),
+  yoloModelPath: process.env.YOLO_MODEL || path.join(__dirname, 'models', 'yolo', 'yolov10n.onnx'),
+  detector: process.env.DETECTOR || 'cocossd',
   intervalMs: parseInt(process.env.COUNT_INTERVAL_MS || '4000', 10),
   minScore: parseFloat(process.env.COUNT_MIN_SCORE || '0.45'),
+  threads: parseInt(process.env.COUNT_THREADS || '2', 10),
 }) : null;
 
 // The camera serves only the HD stream (ch0_0). "SD" = HD downscaled by ffmpeg
@@ -135,6 +138,14 @@ app.get('/api/occupancy/now', (req, res) => res.json(counter ? counter.now() : {
 app.get('/api/occupancy/status', (req, res) => res.json(counter ? counter.status() : { ready: false, running: false, disabled: true }));
 app.get('/api/occupancy', (req, res) => res.json(counter ? counter.series(req.query.range) : { range: 'hour', points: [], disabled: true }));
 
+// switch detection engine at runtime (cocossd | yolo); loads the model on first use
+app.post('/api/occupancy/detector/:name', (req, res) => {
+  if (!counter) return res.status(409).json({ error: 'counter disabled' });
+  counter.setDetector(req.params.name)
+    .then(() => res.json(counter.status()))
+    .catch((e) => res.status(400).json({ error: e.message }));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, '0.0.0.0', () => {
@@ -144,7 +155,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  webrtc : via go2rtc on :${GO2RTC_PORT}`);
   if (counter) {
     counter.start()
-      .then(() => console.log('  counter: detecting people (coco-ssd/wasm)'))
+      .then(() => { const s = counter.status(); console.log(`  counter: detecting people (${s.detector} / ${s.backend})`); })
       .catch((e) => console.error('  counter: failed to start —', e.message));
   }
 });

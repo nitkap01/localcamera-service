@@ -13,16 +13,42 @@ LAN IP and open the page.
 | `PORT` | No | `8080` | Port for the web UI (the page you open in a browser). |
 | `GO2RTC_PORT` | No | `1984` | go2rtc API + WebRTC signaling. The browser is told this value via `/api/info`, so change it here (not just the port mapping) if you remap it. |
 | `DB_PATH` | No | `/data/occupancy.db` | People-count SQLite DB. Mount a volume at `/data` (the compose file does) so the history survives redeploys. |
+| `DETECTOR` | No | `cocossd` | Detection engine at boot: `cocossd` or `yolo`. Also switchable at runtime from the People tab. |
 | `COUNT_INTERVAL_MS` | No | `4000` | How often (ms) to grab a frame and count people. |
 | `COUNT_MIN_SCORE` | No | `0.45` | Detection confidence threshold (0–1). Higher = fewer false positives. |
+| `COUNT_THREADS` | No | `2` | CPU threads for the YOLO engine. Raise on a beefy host, drop to `1` on a Pi. |
 | `COUNT_ENABLE` | No | `1` | Set `0` to turn the people counter off entirely. |
+| `YOLO_MODEL` | No | `/app/models/yolo/yolov10n.onnx` | Path to the ONNX model. Only change to swap in a different YOLO export. |
 
 ### People counter
 
 The **People** tab logs how many people are in frame over time. Detection runs
-server-side (TensorFlow.js `coco-ssd` on the WASM backend — offline, no cloud,
-any CPU/arch) every `COUNT_INTERVAL_MS`, and each `{count, timestamp}` is stored
-in SQLite at `DB_PATH`. Keep the `/data` volume mounted so history persists.
+**server-side** — nothing is detected in the browser. Every `COUNT_INTERVAL_MS`
+the server grabs a frame, counts the people in it, and stores
+`{timestamp, count, detector}` in SQLite at `DB_PATH`. Keep the `/data` volume
+mounted so history persists.
+
+### Detection engines
+
+Both models are baked into the image, so detection is fully offline. Pick one
+with `DETECTOR`, or flip between them live from the **engine** switch in the
+People tab (the first switch to an engine loads its model, ~1–3s; after that
+it's instant, and both stay loaded).
+
+| Engine | Model | Runtime | Notes |
+|---|---|---|---|
+| `cocossd` (default) | ssdlite_mobilenet_v2 | TensorFlow.js, WASM | Pure JS, no native code. Lighter, but misses people more often. |
+| `yolo` | YOLOv10n (~9MB) | onnxruntime-node, CPU | More accurate. NMS is baked into the model, so detections come out already de-duplicated. |
+
+Each sample records which engine produced it (the `detector` column), so history
+stays readable when you switch. Switching does **not** discard past data.
+
+> YOLOv10 is **AGPL-3.0** licensed. Fine for personal/home use like this; if you
+> ever redistribute this service, that license travels with the model.
+
+`GET /api/occupancy/status` reports the active engine; `POST
+/api/occupancy/detector/{cocossd|yolo}` switches it. There's no auth — the
+viewer is LAN-only by design.
 
 ### Why mobile WebRTC fails in a container
 
@@ -50,7 +76,8 @@ the viewer — they only matter when flashing/finding the camera. Don't put them
 
 ## Build & push to Docker Hub
 
-Multi-arch (works on an x86 server *and* an ARM Pi). Replace `YOURUSER`.
+Multi-arch (works on an x86 server *and* an ARM Pi). **Bump the version tag on
+every build** — Portainer caches `:latest` and won't re-pull it.
 
 ```bash
 cd viewer
@@ -58,6 +85,7 @@ docker login
 docker buildx create --use --name lcs 2>/dev/null || docker buildx use lcs
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
+  -t nitinkapoor/localcamera-viewer:v3 \
   -t nitinkapoor/localcamera-viewer:latest \
   --push .
 ```
@@ -66,9 +94,13 @@ Single-arch (just your server's CPU) is simpler if you don't need ARM:
 
 ```bash
 cd viewer
-docker build -t nitinkapoor/localcamera-viewer:latest .
-docker push nitinkapoor/localcamera-viewer:latest
+docker build -t nitinkapoor/localcamera-viewer:v3 .
+docker push nitinkapoor/localcamera-viewer:v3
 ```
+
+> The Dockerfile declares `ARG TARGETARCH` **without a default**. Adding one
+> (`ARG TARGETARCH=amd64`) silently shadows the value buildx injects, and every
+> architecture ends up with amd64 binaries. Don't reintroduce it.
 
 ## Deploy on Portainer
 

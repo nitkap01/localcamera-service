@@ -1,6 +1,6 @@
 # localcamera-service — current status
 
-_Last updated: 2026-07-09. This is the at-a-glance "where we are + how to run it +
+_Last updated: 2026-07-10. This is the at-a-glance "where we are + how to run it +
 what's next" doc. The full chronological journal is in [`PROJECT.md`](./PROJECT.md)._
 
 **Status: working and deployed.** A Xiaomi Yi "Ants" camera, taken off the Chinese
@@ -32,11 +32,19 @@ on Portainer.
   (Hour / Day / Week).
 
 **People counter** (server-side, 24/7)
-- Samples a frame every `COUNT_INTERVAL_MS` (default 4s), counts `person` boxes
-  with **coco-ssd (TensorFlow.js, WASM backend)** — offline, no cloud, any CPU/arch.
-- Logs `{ts, count}` to **SQLite** at `DB_PATH` (instantaneous occupancy).
+- Samples a frame every `COUNT_INTERVAL_MS` (default 4s) and counts the people
+  in it. Everything runs on the server — nothing detects in the browser.
+- **Two engines**, switchable live from the People tab or set via `DETECTOR`:
+  - `cocossd` (default) — coco-ssd on TensorFlow.js/WASM. Pure JS, any arch.
+  - `yolo` — YOLOv10n on onnxruntime-node (CPU). More accurate; NMS is baked
+    into the model, so no post-processing. AGPL-3.0 model.
+  Both models ship in the image (offline). The first switch to an engine loads
+  its model (~1–3s); both then stay loaded, so flipping back is instant.
+- Logs `{ts, count, detector}` to **SQLite** at `DB_PATH` (instantaneous
+  occupancy). The `detector` column keeps history readable across switches.
 - API: `GET /api/occupancy/now`, `/api/occupancy/status`,
-  `/api/occupancy?range=hour|day|week`.
+  `/api/occupancy?range=hour|day|week`,
+  `POST /api/occupancy/detector/{cocossd|yolo}`.
 
 ---
 
@@ -44,7 +52,7 @@ on Portainer.
 
 **Container** (Docker Hub): `nitinkapoor/localcamera-viewer` — multi-arch
 (`linux/amd64` + `linux/arm64`), Debian base (`node:20-slim`).
-- **Deploy the versioned tag** `:v2`, not `:latest`. Portainer caches `latest`
+- **Deploy the versioned tag** `:v3`, not `:latest`. Portainer caches `latest`
   and won't re-pull it, which served a stale image (that's what caused the
   `/sbin/tini` start error). A fresh tag forces a clean pull. Bump the tag on
   each new build.
@@ -53,11 +61,12 @@ on Portainer.
 ```yaml
 services:
   localcamera-viewer:
-    image: nitinkapoor/localcamera-viewer:v2
+    image: nitinkapoor/localcamera-viewer:v3
     container_name: localcamera-viewer
     network_mode: host
     environment:
       CAMERA_IP: "192.168.0.143"
+      DETECTOR: "cocossd"       # or "yolo" — also switchable live in the People tab
     volumes:
       - lcs-data:/data          # people-count history — survives redeploys
     restart: unless-stopped
@@ -72,8 +81,9 @@ v22/v25 which fail to load it.
 
 **Env vars**: `CAMERA_IP` (required) · `WEBRTC_CANDIDATE=<host-ip>:8555` (bridge
 networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
-(`/data/occupancy.db`) · `COUNT_INTERVAL_MS` (4000) · `COUNT_MIN_SCORE` (0.45) ·
-`COUNT_ENABLE` (1).
+(`/data/occupancy.db`) · `DETECTOR` (`cocossd`) · `COUNT_INTERVAL_MS` (4000) ·
+`COUNT_MIN_SCORE` (0.45) · `COUNT_THREADS` (2) · `COUNT_ENABLE` (1) ·
+`YOLO_MODEL`.
 
 ---
 
@@ -86,10 +96,26 @@ networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
   TensorFlow to compile and it runs on amd64/arm64 alike. Model
   (`ssdlite_mobilenet_v2`, ~17MB) is vendored/fetched at build and loaded from
   local files = fully offline.
+- **YOLO engine**: **YOLOv10n**, because it's *end-to-end* — NMS is baked into the
+  graph, so the model returns already-de-duplicated boxes (`[1,300,6]` of
+  `x1,y1,x2,y2,score,class`) and there is no NMS code to get wrong. Runs on
+  `onnxruntime-node`, which ships prebuilt CPU binaries for linux x64+arm64
+  (no compile, no CUDA — set `ONNXRUNTIME_NODE_INSTALL=skip` to suppress the
+  optional GPU download).
+- **`onnxruntime-node` is pinned to `1.22.0` exactly.** 1.23+ dropped the
+  `darwin/x64` binary, and this Mac's nvm Node 20 is an **x64** build (Rosetta),
+  so newer versions break local dev with `Cannot find module
+  '.../darwin/x64/onnxruntime_binding.node'`. A caret (`^1.22.0`) would drift
+  back to 1.27 — keep it exact.
+- **`ARG TARGETARCH` must have NO default.** `ARG TARGETARCH=amd64` *shadows* the
+  value buildx injects, so every arch silently gets amd64 binaries — confirmed:
+  the published `:v2` arm64 image had an **x86-64 go2rtc** inside it. Fixed in
+  `:v3`; the build now fails loudly on an unknown arch instead of guessing.
 - **SQLite bucketing**: floor with `ts - ts % bucket` (integer modulo);
   `(ts/b)*b` didn't floor due to float binding.
 - **Docker base**: Alpine → `node:20-slim` (glibc) so `better-sqlite3` installs
   cleanly. tini lives at `/usr/bin/tini` on Debian (was `/sbin/tini` on Alpine).
+  onnxruntime also has no musl build, so glibc is now doubly required.
 - **Camera quirks**: busybox lacks `nohup/head/sort/wait -n`; `himm`/tools need
   `LD_LIBRARY_PATH=/home/lib`; the low/SD substream is corrupt, so "SD" = ffmpeg
   downscale of HD.
@@ -105,7 +131,8 @@ networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
 - **Unique-person entry counting** — current counter is *instantaneous
   occupancy*. Counting how many distinct people *entered* needs tracking/re-ID
   across frames.
-- **Detection quality** — tune `COUNT_MIN_SCORE`, try a larger model, add a
+- **Detection quality** — tune `COUNT_MIN_SCORE`, step up to `yolov10s/m`
+  (drop-in: same input/output shape, just set `YOLO_MODEL`), add a
   region-of-interest / min box size to cut false positives.
 - **Alerts** — notify on occupancy thresholds (MQTT / Home Assistant / Telegram /
   webhook).
@@ -120,10 +147,11 @@ networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
 ```
 viewer/               the web viewer + counter
   server.js           Express: live MJPEG, snapshot, record, /api/occupancy
-  counter.js          person detection (coco-ssd/WASM) -> SQLite
-  public/index.html   UI: Live + People tabs, controls, SVG chart
+  counter.js          sample loop -> detector -> SQLite; runtime engine swap
+  detectors/          cocossd.js (tfjs/WASM) + yolo.js (YOLOv10n/onnxruntime)
+  public/index.html   UI: Live + People tabs, controls, engine switch, SVG chart
   go2rtc/             WebRTC (RTSP -> WebRTC) config + binary (gitignored)
-  models/             fetch-model.sh (coco-ssd weights; gitignored)
+  models/             fetch-model.sh (coco-ssd + yolov10n weights; gitignored)
   Dockerfile          multi-stage Debian build (deps + model + go2rtc)
   docker-compose.yml  Portainer stack (host + bridge options)
   DOCKER.md           build / push / deploy + env reference

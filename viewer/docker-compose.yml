@@ -8,11 +8,12 @@
 # Docker Desktop for Mac/Windows (host mode isn't real there — use Option B).
 services:
   localcamera-viewer:
-    image: nitinkapoor/localcamera-viewer:latest   # <-- your Docker Hub repo
+    image: nitinkapoor/localcamera-viewer:v3   # <-- bump the tag per build; Portainer caches :latest
     container_name: localcamera-viewer
     network_mode: host
     environment:
       CAMERA_IP: "192.168.0.143"   # <-- REQUIRED: your camera's LAN IP
+      DETECTOR: "cocossd"          # detection engine: cocossd | yolo (also switchable in the People tab)
     volumes:
       - lcs-data:/data             # people-count history (SQLite) — survives redeploys
     restart: unless-stopped

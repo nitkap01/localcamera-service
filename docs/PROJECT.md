@@ -480,3 +480,97 @@ Now live and running on the Portainer host (`192.168.0.246:8080`).
   per build instead of relying on `latest`.
 - Added [`docs/STATUS.md`](./STATUS.md) as the consolidated current-state +
   roadmap doc to build over.
+
+---
+
+## 15. Milestone — YOLO detection mode (2026-07-10)
+
+**Goal:** "i want to have a YOLO detection mode as well, all running on the
+server." A second person-detection engine next to coco-ssd, still 100%
+server-side, still in the Portainer container.
+
+### Choosing the model and runtime
+
+Verified everything *before* writing code:
+
+- **Model — YOLOv10n** (`onnx-community/yolov10n`, 9MB fp32, AGPL-3.0). Picked
+  over YOLOv8 mainly because YOLOv10 is **end-to-end**: NMS is baked into the
+  graph. Input `images [1,3,640,640]`, output `output0 [1,300,6]` rows of
+  `x1,y1,x2,y2,score,class`, already de-duplicated. That deletes the single
+  most bug-prone chunk of any YOLO integration — there is no NMS to write.
+  (Ultralytics only publishes `.pt` on HF, not ONNX; `Xenova/yolov8n` 401s.)
+- **Runtime — `onnxruntime-node`**, not `tfjs-node` (needs native TF) and not
+  `onnxruntime-web` (WASM, slower). It ships **prebuilt CPU binaries** for
+  `linux/x64` and `linux/arm64`, so nothing compiles. Its Linux ELFs need only
+  `libstdc++`/`libgcc_s`/`libc` — **no libgomp** — all present in `node:20-slim`
+  (and absent from musl, so Alpine remains off the table).
+- Ran the model on a **live frame pulled from the deployed container** before
+  committing to it: person @ `0.911`, plus chair/tv/cup. `PERSONS @0.45 = 1`,
+  matching coco-ssd.
+
+### Shape of the change
+
+`counter.js` no longer knows how to detect anything. Detection moved behind a
+four-method interface, one file per engine:
+
+```js
+{ name, load(): Promise<void>, count(rgb, w, h): Promise<number>, backend(): string|null }
+```
+
+- `detectors/cocossd.js` — the old tfjs/WASM path, unchanged in behaviour.
+- `detectors/yolo.js` — letterbox to 640×640 (grey `114/255` pad, aspect kept),
+  NCHW float32 `0..1`, then read `class===0 && score>=minScore` off the output.
+- Both are `require`d **lazily**, so picking one engine never loads the other's
+  runtime.
+
+Engine selection: `DETECTOR=cocossd|yolo` at boot, plus
+`POST /api/occupancy/detector/:name` to swap at runtime, driven by an **engine**
+switch in the People tab. Models are cached once built, so the first switch to an
+engine costs ~1–3s and every switch after that is instant.
+
+Detections and swaps are pushed through one promise chain (`serial()`), so a swap
+can never land in the middle of a sample — they share a model/session.
+
+`occupancy` gained a `detector` column (idempotent guarded `ALTER`, verified
+against an old-schema DB: it migrates once, keeps old rows with `detector = NULL`,
+and re-opening doesn't throw). Two engines write to one table; without provenance
+the history would be uninterpretable.
+
+### Two traps, both caught by actually running the thing
+
+1. **`ARG TARGETARCH=amd64` shadows the value buildx injects.** Declaring a
+   default means *every* architecture silently gets `amd64`. Proven with a
+   throwaway build: with a default → `TARGETARCH='amd64'` even when
+   `TARGETPLATFORM='linux/arm64'`; without one → `arm64`. This was a **latent,
+   pre-existing bug**: the published `:v2` **arm64** image contains an
+   **x86-64 go2rtc binary** (`e_machine=0x3e`), so WebRTC would have been dead on
+   a Pi. It never bit because the Portainer host is amd64. Fixed by dropping the
+   defaults; both `case` statements now **fail the build** on an unknown arch
+   instead of quietly falling back to amd64.
+2. **`onnxruntime-node` ≥1.23 dropped the `darwin/x64` binary**, and this Mac's
+   nvm Node 20 is an **x64** build (Rosetta). `npm i onnxruntime-node@^1.22.0`
+   resolved to 1.27 and broke local dev with `Cannot find module
+   '.../darwin/x64/onnxruntime_binding.node'`. Pinned to **exactly `1.22.0`**
+   (a caret drifts straight back to 1.27). Containers were never affected —
+   both linux arches exist in every version.
+
+Also: `ONNXRUNTIME_NODE_INSTALL=skip` in the build stage (its postinstall only
+fetches optional **CUDA** binaries; the CPU ones are bundled — verified), and the
+image prunes the ~230MB of foreign-OS/arch binaries the package ships down to the
+one it runs on (**236MB → 31MB**).
+
+### Verified
+
+| Check | Result |
+|---|---|
+| Both engines, live camera | agree — `1` person on a frame with a person, `0` on empty |
+| Median latency (same frames, 2 threads) | coco-ssd 95ms · yolo 98ms |
+| Runtime swap | `yolo → cocossd → yolo`, no restart, `lastErr: null` |
+| Bad engine name | `400`, counter keeps running on the old engine |
+| Old-schema DB | migrates once, old rows preserved, re-open is a no-op |
+| Chart bucketing | still floored (`t % bucketMs === 0`) |
+| Container `DETECTOR=yolo` (arm64) | `detector: yolo / onnxruntime-cpu`, counted 2 people |
+| Container **amd64** (deploy target, emulated) | model loads in 312ms, inference OK |
+| Image contents | `ort: linux/<arch>` only; go2rtc `e_machine` matches arch |
+
+Task doc: [`tasks/2026-07-10/yolo-detection-mode.md`](./tasks/2026-07-10/yolo-detection-mode.md).
