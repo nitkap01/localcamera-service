@@ -33,6 +33,11 @@
   .stage.cssfs { position:fixed; inset:0; z-index:9999; background:#000; }
   #ovnote { color:var(--mut); align-self:center; }
   .dbtn:disabled { opacity:.5; cursor:default; }
+  /* "Hide UI": video only. The restore button stays, or press H / Escape. */
+  body.bare header, body.bare .tabs, body.bare .bar, body.bare .adjust { display:none; }
+  #showui { display:none; position:fixed; top:12px; right:12px; z-index:10000; opacity:.5; }
+  body.bare #showui { display:inline-flex; }
+  #showui:hover, #showui:focus { opacity:1; }
   .badge { position:absolute; top:10px; left:10px; background:rgba(0,0,0,.55); padding:3px 9px; border-radius:999px; font-size:11px; color:var(--mut); letter-spacing:.04em; max-width:80%; z-index:3; }
   .recbadge { position:absolute; top:10px; right:10px; display:none; align-items:center; gap:6px; background:rgba(0,0,0,.6); padding:4px 10px; border-radius:999px; font-size:12px; color:#fff; z-index:3; }
   .recbadge.on { display:flex; }
@@ -80,6 +85,8 @@
     <span class="meta" id="meta"></span>
   </header>
 
+  <button id="showui" title="Show the controls (H)">⚙ Controls</button>
+
   <div class="tabs">
     <button data-tab="live" class="on">📺 Live</button>
     <button data-tab="people">👥 People</button>
@@ -123,6 +130,7 @@
     <button id="logo">🚫 Hide YI</button>
     <button id="fit">⤢ Fit</button>
     <button id="full">⛶ Fullscreen</button>
+    <button id="hideui" title="Hide the controls (H)">🙈 Hide UI</button>
     <div class="grp">
       <small>detect</small>
       <button data-layer="people" class="dbtn">🧍 People</button>
@@ -281,7 +289,18 @@
     else if (vid && vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); }
   }
   document.getElementById('full').onclick = goFullscreen;
-  addEventListener('keydown', (e) => { if (e.key === 'Escape') document.getElementById('stagewrap').classList.remove('cssfs'); });
+
+  // hide the chrome so it's just the video; Escape / H bring it back
+  const showui = document.getElementById('showui'), hideui = document.getElementById('hideui');
+  const setBare = (on) => { document.body.classList.toggle('bare', on); hideui.classList.toggle('on', on); };
+  hideui.onclick = () => setBare(true);
+  showui.onclick = () => setBare(false);
+  addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { document.getElementById('stagewrap').classList.remove('cssfs'); setBare(false); }
+    else if ((e.key === 'h' || e.key === 'H') && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+      setBare(!document.body.classList.contains('bare'));
+    }
+  });
 
   // --- detection overlay (browser-side; the server counter is separate) ---
   const ovnote = document.getElementById('ovnote');

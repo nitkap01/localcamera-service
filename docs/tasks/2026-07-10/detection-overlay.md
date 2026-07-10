@@ -90,3 +90,49 @@ Also verified:
 
 Done and verified. Image needs a rebuild + push as **`:v4`** to reach Portainer
 (bump the tag; `:latest` is cached there). No new env vars are required.
+
+---
+
+## Follow-up (same day) — overlay was invisible in `:v4`, plus Hide UI
+
+**Reported:** "its deployed, but i dont see bounding boxes, also there should a
+option to hide the controls"
+
+### The bug
+
+Driving a real browser against the deployed viewer showed the truth immediately:
+
+```
+painted: 3830          <- boxes WERE being drawn
+canvas display: none   <- into an invisible canvas
+canvas offsetParent: null
+```
+
+`canvas.style.display = ''` does **not** mean "visible". It clears the *inline*
+style, which lets the stylesheet rule `#overlay { display:none }` apply again. So
+the overlay detected, drew, and painted — into a hidden canvas. Because a hidden
+element has no `offsetParent`, `boxOf()` also walked the wrong offset chain and
+positioned the canvas at `top:96px` instead of over the video.
+
+My headless test passed because its throwaway test page never had the
+`display:none` rule. The lesson: the test page must share the production CSS, or
+the assertion must be "is it *visible*", not "did we draw".
+
+**Fix:** set an explicit `canvas.style.display = 'block'` (both sites).
+
+**Now asserted:** `display:block`, `offsetParent: stagewrap`, canvas rect
+**pixel-identical** to the video rect (`[0,96,1280,720]`), and
+`elementFromPoint(centre) === VIDEO` (so the overlay still doesn't eat clicks).
+
+### Hide UI
+
+`🙈 Hide UI` adds `body.bare`, hiding header / tabs / control bar / adjust panel.
+A faint `⚙ Controls` button (fixed, above even the CSS-fullscreen layer) restores
+it; `H` toggles, `Escape` restores. Verified: `bar: none`, `showui: flex`, stage
+still visible, restore returns `bar: flex`, and both keys work.
+
+### Not ours
+
+The console also shows a `favicon.ico` 404 and an `InvalidStateError` about
+`SourceBuffer` from go2rtc's own `video-rtc.js` (MSE teardown when WebRTC wins).
+Both pre-date this work; left alone.

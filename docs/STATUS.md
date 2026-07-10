@@ -30,6 +30,8 @@ on Portainer.
   label carries a probability score. Runs on the displayed frame, so boxes line
   up with the video and the server does no extra work. Live display only; nothing
   is logged. Models load lazily on first toggle and are served from this host.
+- **Hide UI**: strips the header/tabs/controls down to just the video. A faint
+  ⚙ button restores them; `H` toggles, `Escape` restores.
 - **Capture**: snapshot (JPEG) and record (MP4, 10–60s).
 - **Adjust**: brightness / contrast / saturation / hue, rotate, mirror, HD/SD,
   and hide the burned-in "YI" watermark (`delogo`).
@@ -57,7 +59,7 @@ on Portainer.
 
 **Container** (Docker Hub): `nitinkapoor/localcamera-viewer` — multi-arch
 (`linux/amd64` + `linux/arm64`), Debian base (`node:20-slim`).
-- **Deploy the versioned tag** `:v4`, not `:latest`. Portainer caches `latest`
+- **Deploy the versioned tag** `:v5`, not `:latest`. Portainer caches `latest`
   and won't re-pull it, which served a stale image (that's what caused the
   `/sbin/tini` start error). A fresh tag forces a clean pull. Bump the tag on
   each new build.
@@ -66,7 +68,7 @@ on Portainer.
 ```yaml
 services:
   localcamera-viewer:
-    image: nitinkapoor/localcamera-viewer:v4
+    image: nitinkapoor/localcamera-viewer:v5
     container_name: localcamera-viewer
     network_mode: host
     environment:
@@ -127,6 +129,11 @@ networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
   behaviour is untouched.
 - **Overlay pauses while rotated**: CSS rotation moves the picture but not the
   layout box, so boxes would sit crooked. Mirror is handled (x is flipped).
+- **`el.style.display = ''` is not "show".** It clears the *inline* style, so the
+  stylesheet's `#overlay { display:none }` wins again — the overlay drew boxes
+  into an invisible canvas (and, being hidden, had a `null` offsetParent, so it
+  was mispositioned too). Always set an explicit `'block'`. Shipped broken in
+  `:v4`, fixed in `:v5`; a local test page without that CSS rule had hidden it.
 - **SQLite bucketing**: floor with `ts - ts % bucket` (integer modulo);
   `(ts/b)*b` didn't floor due to float binding.
 - **Docker base**: Alpine → `node:20-slim` (glibc) so `better-sqlite3` installs

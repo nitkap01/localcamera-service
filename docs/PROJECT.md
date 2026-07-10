@@ -645,3 +645,40 @@ when it is actually finished — a flaw in the test, not the code, but worth not
 repeating.
 
 Task doc: [`tasks/2026-07-10/detection-overlay.md`](./tasks/2026-07-10/detection-overlay.md).
+
+---
+
+## 17. Fix — the overlay was invisible, and a Hide-UI option (2026-07-10)
+
+Shipped `:v4`, deployed it, and the boxes didn't show. Driving a real browser at
+the deployed viewer answered it in one shot:
+
+```
+painted: 3830            <- the boxes WERE being drawn
+canvas display: none     <- into an invisible canvas
+canvas offsetParent: null
+```
+
+`canvas.style.display = ''` clears the **inline** style; it does not mean
+"visible". The stylesheet's `#overlay { display:none }` then wins, so the overlay
+happily detected and painted into a hidden canvas. And because a hidden element
+has no `offsetParent`, the geometry code walked the wrong offset chain and parked
+the canvas at `top:96px` as well. One-word cause, two symptoms.
+
+Fixed by setting an explicit `display = 'block'`. The verification now asserts
+what actually matters: `display:block`, `offsetParent: stagewrap`, the canvas rect
+**pixel-identical** to the video rect, and `elementFromPoint(centre) === VIDEO`
+(the overlay must not eat clicks).
+
+Why the original test missed it: the throwaway test page had its own CSS and never
+included the `display:none` rule, so "did we draw?" passed while "is it visible?"
+was never asked. A test that renders the component outside its real stylesheet can
+only prove the component computes — not that a user can see it.
+
+Also added **🙈 Hide UI** (`body.bare` hides header/tabs/bar/adjust; a faint
+`⚙ Controls` button restores, `H` toggles, `Escape` restores) — for a wall display
+or a propped-up phone.
+
+Left alone, both pre-existing and not ours: a `favicon.ico` 404, and an
+`InvalidStateError` on `SourceBuffer` from go2rtc's `video-rtc.js` when MSE is torn
+down as WebRTC takes over.

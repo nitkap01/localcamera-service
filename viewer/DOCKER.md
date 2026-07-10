@@ -77,6 +77,12 @@ it), and the overlay pauses while the picture is **rotated** — boxes would sit
 crooked, since CSS rotation moves the picture but not its layout box. Mirror
 works fine.
 
+### Hide UI
+
+**🙈 Hide UI** strips everything but the video. A faint **⚙ Controls** button in
+the corner brings the chrome back; `H` toggles it and `Escape` restores. Handy
+for a wall display or a phone propped up as a monitor.
+
 ### Why mobile WebRTC fails in a container
 
 WebRTC has to hand the browser an IP address to connect back to. Inside a
@@ -112,7 +118,7 @@ docker login
 docker buildx create --use --name lcs 2>/dev/null || docker buildx use lcs
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t nitinkapoor/localcamera-viewer:v4 \
+  -t nitinkapoor/localcamera-viewer:v5 \
   -t nitinkapoor/localcamera-viewer:latest \
   --push .
 ```
@@ -121,8 +127,8 @@ Single-arch (just your server's CPU) is simpler if you don't need ARM:
 
 ```bash
 cd viewer
-docker build -t nitinkapoor/localcamera-viewer:v4 .
-docker push nitinkapoor/localcamera-viewer:v4
+docker build -t nitinkapoor/localcamera-viewer:v5 .
+docker push nitinkapoor/localcamera-viewer:v5
 ```
 
 > The Dockerfile declares `ARG TARGETARCH` **without a default**. Adding one

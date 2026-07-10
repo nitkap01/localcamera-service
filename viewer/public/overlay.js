@@ -196,7 +196,9 @@ export function createOverlay({ stage, canvas, getRot, getMirror, getCover, onNo
     // CSS rotation moves the picture but not the layout box, so the overlay
     // would sit crooked. Pause it rather than draw boxes in the wrong place.
     if (getRot() !== 0) { canvas.style.display = 'none'; note('overlay paused while rotated'); return; }
-    canvas.style.display = '';
+    // must be an explicit value: display='' would drop back to the stylesheet's
+    // `#overlay { display:none }` and we'd draw into an invisible canvas.
+    canvas.style.display = 'block';
 
     const b = boxOf(m);
     if (!b.w || !b.h) return;
@@ -218,7 +220,7 @@ export function createOverlay({ stage, canvas, getRot, getMirror, getCover, onNo
   }
 
   function start() {
-    canvas.style.display = '';
+    canvas.style.display = 'block';
     if (!raf) raf = requestAnimationFrame(frame);
   }
   function stop() {
