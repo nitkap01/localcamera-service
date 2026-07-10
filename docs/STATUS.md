@@ -5,8 +5,11 @@ what's next" doc. The full chronological journal is in [`PROJECT.md`](./PROJECT.
 
 **Status: working and deployed.** A Xiaomi Yi "Ants" camera, taken off the Chinese
 cloud, streaming locally, with a self-hosted browser viewer (live video, capture,
-image controls) plus a server-side people counter — running as a Docker container
-on Portainer.
+image controls, live detection overlay) plus a server-side people counter —
+running as a Docker container on Portainer.
+
+> **Action pending:** the Portainer stack still points at `:v4`. Redeploy it with
+> **`:v5`** to pick up the visible overlay + Hide UI. See _How it's deployed_.
 
 ---
 
@@ -82,6 +85,18 @@ volumes:
 ```
 Open **http://192.168.0.246:8080**.
 
+### Release history (Docker Hub tags)
+
+Always deploy the **numbered tag**. `:latest` also moves, but Portainer caches it
+and won't re-pull, which has already cost us one confusing outage.
+
+| Tag | What it added | Notes |
+|---|---|---|
+| `v2` | first working published image | ⚠️ its **arm64** variant contains an **x86-64 go2rtc** — broken on ARM |
+| `v3` | YOLO detection mode (2nd engine, runtime-swappable) | fixes the arm64 binary bug |
+| `v4` | live detection overlay (People / Hands / Face) | ⚠️ overlay never rendered — drew into a hidden canvas |
+| **`v5`** | **overlay actually visible + Hide UI** | **current — deploy this** |
+
 **Local dev** (Mac): `cd viewer && npm start` (runs go2rtc + node). Pin **Node 20**
 — `better-sqlite3` is ABI-locked to the Node it built for, and nvm here also has
 v22/v25 which fail to load it.
@@ -134,6 +149,13 @@ networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
   into an invisible canvas (and, being hidden, had a `null` offsetParent, so it
   was mispositioned too). Always set an explicit `'block'`. Shipped broken in
   `:v4`, fixed in `:v5`; a local test page without that CSS rule had hidden it.
+- **Test UI against the real page, and assert *visibility*, not "did we draw".**
+  The `:v4` overlay bug survived a green test because that test rendered the
+  component on a throwaway page with its own CSS. The check that catches it:
+  drive a real browser (Chrome + puppeteer-core, no browser download needed),
+  then assert `display`, `offsetParent`, that the canvas rect is pixel-identical
+  to the media rect, and that `elementFromPoint(centre)` is still the media (so
+  the overlay doesn't eat clicks).
 - **SQLite bucketing**: floor with `ts - ts % bucket` (integer modulo);
   `(ts/b)*b` didn't floor due to float binding.
 - **Docker base**: Alpine → `node:20-slim` (glibc) so `better-sqlite3` installs
@@ -142,6 +164,29 @@ networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
 - **Camera quirks**: busybox lacks `nohup/head/sort/wait -n`; `himm`/tools need
   `LD_LIBRARY_PATH=/home/lib`; the low/SD substream is corrupt, so "SD" = ffmpeg
   downscale of HD.
+
+---
+
+## What changed most recently (2026-07-10)
+
+Three pieces of work, all committed and published:
+
+1. **YOLO detection mode** (`v3`) — the people counter got a second engine.
+   `cocossd` (tfjs/WASM) stays the default; `yolo` (YOLOv10n on onnxruntime-node)
+   is more accurate. Pick with `DETECTOR`, or swap live from the People tab; both
+   models stay loaded once built. Each sample records which engine produced it.
+   Found and fixed a latent bug on the way: the `v2` arm64 image shipped an
+   x86-64 go2rtc.
+2. **Live detection overlay** (`v4`) — People / Hands / Face toggles on the Live
+   tab, every label with a probability score (`person 0.91`,
+   `Right · Victory 0.94`, `mouth smile left 0.96`). Runs in the **browser**, on
+   the displayed frame, so boxes align with the video and the server does no extra
+   work. Live only, nothing logged.
+3. **Overlay fix + Hide UI** (`v5`) — `v4`'s overlay drew into a hidden canvas and
+   never appeared. Fixed. Added a Hide-UI mode for wall displays.
+
+The server-side counter was **not** touched by (2) or (3) and keeps logging with
+no browser open.
 
 ---
 
@@ -181,6 +226,7 @@ viewer/               the web viewer + counter
   DOCKER.md           build / push / deploy + env reference
 scripts/              cam-ssh / cam-scp / find-camera / prep-sd / fetch-*
 firmware/             yi-hack-v3 y18 firmware + fetch script
-docs/PROJECT.md       full build journal
+docs/PROJECT.md       full build journal (§1-17)
 docs/STATUS.md        this file
+docs/tasks/<date>/    per-task docs: request, plan, decisions, verification
 ```
