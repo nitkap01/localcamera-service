@@ -22,6 +22,10 @@ viewer/models/yolo/
 viewer/models/mediapipe/
 viewer/data/
 
+# --- tv-app: Tizen build output ---
+tv-app/.buildResult/
+tv-app/*.wgt
+
 # --- os / editor junk ---
 .DS_Store
 scratch/

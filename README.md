@@ -84,6 +84,7 @@ firmware/            yi-hack-v3 y18 firmware + fetch script + recovery notes
 sd-card/             what goes on the camera's microSD (firmware + wifi + rtsp hook)
 scripts/             cam-ssh / cam-scp / find-camera / camera-info / prep-sd / fetch-*
 viewer/              the web viewer — Node/Express + ffmpeg + go2rtc
+tv-app/              NKCam — a Samsung Tizen TV app for the live view (see tv-app/README.md)
 config.env           local wifi/IP settings (gitignored)
 ```
 
