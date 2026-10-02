@@ -78,12 +78,34 @@ keeps `~/localcamera-viewer/.env` with the name of the existing people-count vol
 
 The camera's RTSP server sometimes stops sending video (seen after a client drops off, e.g. the
 container restarting). `viewer/camera-heal.js` watches go2rtc's byte counter for the stream every
-30 s; if nothing new arrives for `CAMERA_STALE_SECONDS` (120) it SSHes into the camera and restarts
+10 s; if nothing new arrives for `CAMERA_STALE_SECONDS` (60) it SSHes into the camera and restarts
 `h264grabber` + `rRTSPServer` (retrying until port 554 is free), at most once per
 `CAMERA_HEAL_COOLDOWN_SECONDS` (600). go2rtc reconnects on its own. The Recordings tab shows the
 last automatic restart and offers **↻ Restart camera stream** while recording is down
 (`POST /api/camera/restart-stream`). `CAMERA_HEAL=0` turns it off; `CAMERA_SSH_PASSWORD` if the
 camera's root password is ever set (it's blank by default).
+
+## Why the camera stream froze (root cause)
+
+Diagnosed 02_10_2026 from the camera's process state at the moment of a freeze (`camera-heal.js`
+now records this before every restart; see `docker logs camera | grep -A8 "state before"`):
+
+```
+rRTSPServer  state S  wchan sk_wait_data   <- stuck in a blocking read on a client socket
+h264grabber  state S  wchan pipe_wait      <- stuck writing frames nobody reads any more
+rtsp clients 3                             <- dead connections never cleaned up
+```
+
+The camera's RTSP server (LIVE555 inside yi-hack-v3's `rRTSPServer`) is single-threaded. With
+**RTSP over TCP** the client's RTCP reports come back interleaved on the same socket, and this
+build sometimes blocks reading them, which freezes the whole server; the grabber then stalls
+behind it. It happened at random, from about a minute to an hour after connecting, and right
+after container restarts.
+
+**Fix:** go2rtc's built-in RTSP client is TCP-only, so `go2rtc.yaml` now has **ffmpeg pull the
+camera over UDP** (`#input=rtsp_udp`, `-c copy`, no re-encode) and hand the stream to go2rtc.
+The TCP connection then only carries the RTSP control messages. If it ever freezes again, the
+healer still restarts the camera stream within about a minute.
 
 ## Robustness — what keeps it recording
 
@@ -93,7 +115,7 @@ the dropped connection, and for ~45 minutes nothing restarted it or told anyone.
 | Layer | Where | What it does |
 |---|---|---|
 | Recorder watchdog | `recorder.js` | restarts ffmpeg within 3–15 s; kills it if the clip stops growing for 90 s |
-| Camera self-healing | `camera-heal.js` | no video for 2 min → SSH into the camera, restart its RTSP server |
+| Camera self-healing | `camera-heal.js` | checks every 10 s; no video for 1 min (or a fresh connection with no video in 25 s) → SSH into the camera, save its state, restart its RTSP server |
 | NAS fallback | `recorder.js` | NAS gone → record to the Docker host's disk, move clips back later |
 | Clean shutdown | `docker-entrypoint.sh` | `docker stop` stops node (clip closed), then go2rtc (RTSP session ended properly — avoids the freeze) |
 | Health check | `/api/health`, compose `healthcheck` | container shows *unhealthy* after 5 min without new video |
@@ -102,7 +124,9 @@ the dropped connection, and for ~45 minutes nothing restarted it or told anyone.
 | Boot order | `scripts/host/pve-guests-wait-nas.conf` on Proxmox | containers start after the NAS mount has been tried |
 | Email alerts | `alerts.js`, both scripts | recording stopped/resumed, camera restarted (or failed), NAS down/back, container restarted, daily summary at 9:00 |
 
-**Email alerts** go through Gmail with an app password. Credentials live only on the hosts:
+**Email alerts** are currently **off** (the owner asked on 02_10_2026; the `ALERT_*` lines are
+commented out in both env files — uncomment them and recreate the container to turn them back on).
+They go through Gmail with an app password. Credentials live only on the hosts:
 `~/localcamera-viewer/.env` on CT 106 (`ALERT_SMTP_USER`, `ALERT_SMTP_PASS`, `ALERT_TO`) and
 `/root/.camera-alert.env` on Proxmox. The same alert repeats at most every 30 min
 (`ALERT_REPEAT_MINUTES`), max 30 a day (`ALERT_MAX_PER_DAY`); `ALERT_DAILY_HOUR` (9) sets the summary

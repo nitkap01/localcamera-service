@@ -1,7 +1,14 @@
 # go2rtc — provides sub-second WebRTC live view for the viewer.
 # CAMERA_IP is injected from the environment by ../start.sh (from config.env).
+# The camera's RTSP server (rRTSPServer / LIVE555 in yi-hack-v3) freezes at random when the client
+# uses RTSP over TCP: it blocks reading the client's interleaved data (stuck in sk_wait_data), stops
+# reading frames, and h264grabber stalls behind it. go2rtc's own RTSP client is TCP-only, so ffmpeg
+# pulls the camera over UDP and hands the stream to go2rtc (no re-encode).
 streams:
-  nk-camera: rtsp://${CAMERA_IP}:554/ch0_0.h264
+  nk-camera: ffmpeg:rtsp://${CAMERA_IP}:554/ch0_0.h264#input=rtsp_udp#video=copy
+
+ffmpeg:
+  rtsp_udp: "-hide_banner -fflags nobuffer+genpts -flags low_delay -timeout 10000000 -rtsp_transport udp -buffer_size 1048576 -reorder_queue_size 64 -i {input}"
 
 api:
   listen: ":1984"     # signaling + web API (browser connects here for WebRTC)
@@ -15,3 +22,4 @@ webrtc:
 
 log:
   level: warn
+  format: json        # the console writer fails in Docker ("zerolog: could not write event")

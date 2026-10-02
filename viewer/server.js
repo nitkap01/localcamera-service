@@ -73,11 +73,12 @@ const healer = process.env.CAMERA_HEAL !== '0' && (RECORD_ENABLE || COUNT_ENABLE
   go2rtcUrl: `http://127.0.0.1:${GO2RTC_PORT}`,
   user: process.env.CAMERA_SSH_USER || 'root',
   password: process.env.CAMERA_SSH_PASSWORD || '',
-  staleMs: parseInt(process.env.CAMERA_STALE_SECONDS || '120', 10) * 1000,
+  staleMs: parseInt(process.env.CAMERA_STALE_SECONDS || '60', 10) * 1000,
   cooldownMs: parseInt(process.env.CAMERA_HEAL_COOLDOWN_SECONDS || '600', 10) * 1000,
   onEvent(type, h) {
-    if (h.ok) alerter.alert('Camera stream restarted', `Reason: ${h.reason}\nResult: ${h.output}`, { key: 'heal' });
-    else alerter.alert('Camera stream restart FAILED', `Reason: ${h.reason}\nOutput: ${h.output}\n\nThe camera may be offline or powered off (ping ${CAM_IP}). Self-healing retries every 10 min.`, { key: 'healfail' });
+    const diag = h.diag && h.diag.length ? `\n\nCamera state just before the restart:\n${h.diag.join('\n')}` : '';
+    if (h.ok) alerter.alert('Camera stream restarted', `Reason: ${h.reason}\nResult: ${h.output}${diag}`, { key: 'heal' });
+    else alerter.alert('Camera stream restart FAILED', `Reason: ${h.reason}\nOutput: ${h.output}${diag}\n\nThe camera may be offline or powered off (ping ${CAM_IP}). Self-healing retries every 10 min.`, { key: 'healfail' });
   },
 }) : null;
 
@@ -297,7 +298,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  webrtc : via go2rtc on :${GO2RTC_PORT}`);
   if (healer) {
     healer.start();
-    console.log('  heal   : restarts the camera stream if video stops for 2 min');
+    console.log('  heal   : restarts the camera stream if video stops for 1 min');
   }
   console.log(`  alerts : ${alerter.enabled ? 'email to ' + alerter.status().to : 'off (set ALERT_SMTP_USER/PASS/TO)'}`);
   if (recorder) {
