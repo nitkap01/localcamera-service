@@ -206,8 +206,9 @@
     </div>
     <div class="export">
       <small>Download a time range</small>
-      <label>from <input type="time" id="exfrom" step="60"></label>
-      <label>to <input type="time" id="exto" step="60"></label>
+      <label>from <input type="text" id="exfrom" inputmode="numeric" placeholder="14:00" maxlength="5" size="5" pattern="[0-2][0-9]:[0-5][0-9]" title="24-hour time, HH:MM"></label>
+      <label>to <input type="text" id="exto" inputmode="numeric" placeholder="14:45" maxlength="5" size="5" pattern="[0-2][0-9]:[0-5][0-9]" title="24-hour time, HH:MM"></label>
+      <small>24-hour, HH:MM</small>
       <button class="primary" id="exbtn">⬇ Download MP4</button>
       <small id="exnote"></small>
     </div>
@@ -488,10 +489,13 @@
   const hms = (d) => `${hm(d)}:${two(d.getSeconds())}`;
   const gb = (b) => b == null ? '–' : b < 1e9 ? Math.max(1, Math.round(b / 1e6)) + ' MB' : (b / 1e9 >= 10 ? Math.round(b / 1e9) : (b / 1e9).toFixed(1)) + ' GB';
   const dur = (sec) => sec < 3600 ? Math.max(1, Math.round(sec / 60)) + ' min' : (sec / 3600).toFixed(1) + ' h';
-  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`; };
+  // day folders are DD_MM_YYYY; clips DD_MM_YYYY_HH_MM_SS.mp4 (24-hour)
+  const todayStr = () => { const d = new Date(); return `${two(d.getDate())}_${two(d.getMonth() + 1)}_${d.getFullYear()}`; };
+  const dayParts = (day) => { const [d, m, y] = day.split('_').map(Number); return [y, m, d]; };
+  const dayIso = (day) => { const [y, m, d] = dayParts(day); return `${y}-${two(m)}-${two(d)}`; };
   const dayLabel = (day) => {
     if (day === todayStr()) return 'Today';
-    const [y, m, d] = day.split('-').map(Number);
+    const [y, m, d] = dayParts(day);
     const dt = new Date(y, m - 1, d), yest = new Date(); yest.setDate(yest.getDate() - 1);
     if (dt.toDateString() === yest.toDateString()) return 'Yesterday';
     return dt.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
@@ -503,7 +507,7 @@
   function loadRecStatus() {
     fetch('/api/recordings/status').then(r => r.json()).then(st => {
       if (st.error) { $('recstatus').innerHTML = `<span>${st.error}</span>`; return; }
-      const cur = st.current ? st.current.split('/')[1].replace('.mp4', '').replace(/-/g, ':') : null;
+      const cur = st.current ? st.current.split('/')[1].replace('.mp4', '').split('_').slice(3).join(':') : null;
       $('recstatus').innerHTML =
         `<span><span class="dot ${st.recording ? 'on' : 'err'}"></span><b>${st.recording ? 'Recording' : 'Not recording'}</b>${cur ? ` · current clip from ${cur}` : ''}</span>` +
         `<span>keeps <b>${st.retentionDays} days</b>, max <b>${st.maxGb} GB</b>${st.lastCleanup && st.lastCleanup.totalBytes != null ? ` (using ${gb(st.lastCleanup.totalBytes)})` : ''}</span>` +
@@ -542,7 +546,7 @@
   }
 
   function dayBounds() {
-    const [y, m, d] = (R.day || todayStr()).split('-').map(Number);
+    const [y, m, d] = dayParts(R.day || todayStr());
     const t0 = new Date(y, m - 1, d).getTime();
     return [t0, t0 + 864e5];
   }
@@ -591,17 +595,19 @@
     // when a clip ends, roll straight into the next one
     v.onended = () => { const i = R.clips.findIndex(x => x.name === c.name); if (R.clips[i + 1]) play(R.clips[i + 1], 0); };
     $('reccap').textContent = `${dayLabel(R.day)} · ${hms(c.s)} – ${hm(c.e)}${c.live ? ' · still recording' : ''}`;
-    const dl = $('recdl'); dl.hidden = false; dl.href = url; dl.download = `camera_${R.day}_${c.name}`;
+    const dl = $('recdl'); dl.hidden = false; dl.href = url; dl.download = `camera_${c.name}`;
     drawClips();
   }
 
   $('exbtn').onclick = () => {
-    const f = $('exfrom').value, t = $('exto').value;
-    if (!R.day || !f || !t) { $('exnote').textContent = 'pick a day and both times'; return; }
+    const norm = (v) => { const m = v.trim().match(/^([01]?\d|2[0-3])[:.]?([0-5]\d)$/); return m ? `${two(+m[1])}:${m[2]}` : null; };
+    const f = norm($('exfrom').value), t = norm($('exto').value);
+    if (!R.day || !f || !t) { $('exnote').textContent = 'enter both times as 24-hour HH:MM, e.g. 14:00'; return; }
+    $('exfrom').value = f; $('exto').value = t;
     if (t <= f) { $('exnote').textContent = '"to" must be after "from"'; return; }
     $('exnote').textContent = 'preparing… the download starts in a moment';
     const a = document.createElement('a');
-    a.href = `/api/recordings/export?from=${R.day}T${f}&to=${R.day}T${t}`;
+    a.href = `/api/recordings/export?from=${dayIso(R.day)}T${f}&to=${dayIso(R.day)}T${t}`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => { $('exnote').textContent = ''; }, 6000);
   };

@@ -157,9 +157,9 @@ app.get('/api/recordings/days', (req, res) => (recorder ? res.json(recorder.days
 app.get('/api/recordings/day/:day', (req, res) => {
   if (!recorder) return noRec(res);
   const list = recorder.clips(req.params.day);
-  return list ? res.json(list) : res.status(400).json({ error: 'day must look like 2026-10-02' });
+  return list ? res.json(list) : res.status(400).json({ error: 'day must look like 02_10_2026 (DD_MM_YYYY)' });
 });
-// One MP4 for a time range (local time, e.g. ?from=2026-10-02T14:00&to=2026-10-02T14:45): the clips are
+// One MP4 for a time range (local time as ISO, e.g. ?from=2026-10-02T14:00&to=2026-10-02T14:45): the clips are
 // joined and trimmed without re-encoding, so cuts land on the nearest keyframe (within ~2s).
 const MAX_EXPORT_MIN = parseInt(process.env.RECORD_MAX_EXPORT_MINUTES || '240', 10);
 app.get('/api/recordings/export', (req, res) => {
@@ -178,9 +178,10 @@ app.get('/api/recordings/export', (req, res) => {
     '-ss', offset.toFixed(2), '-t', dur.toFixed(2), '-c', 'copy',
     '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1'];
   const ff = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'ignore'] });
-  const stamp = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  const p2 = (n) => String(n).padStart(2, '0');
+  const stamp = (d) => `${p2(d.getDate())}_${p2(d.getMonth() + 1)}_${d.getFullYear()}_${p2(d.getHours())}_${p2(d.getMinutes())}_${p2(d.getSeconds())}`;
   res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Content-Disposition', `attachment; filename="camera_${stamp(from)}-${String(to.getHours()).padStart(2, '0')}${String(to.getMinutes()).padStart(2, '0')}.mp4"`);
+  res.setHeader('Content-Disposition', `attachment; filename="camera_${stamp(from)}_to_${stamp(to)}.mp4"`);
   ff.stdout.pipe(res);
   const done = () => fs.rm(list, () => {});
   ff.on('exit', done);

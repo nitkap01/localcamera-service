@@ -1,6 +1,7 @@
 'use strict';
 // Continuous recorder: copies the camera stream (no re-encode) into 5-minute MP4 clips,
-// one folder per day:  <dir>/2026-10-02/14-05-00.mp4  (local time; set TZ in the container).
+// one folder per day:  <dir>/02_10_2026/02_10_2026_14_05_00.mp4  (DD_MM_YYYY_HH_MM_SS, 24-hour, local
+// time; set TZ in the container). Names don't sort by date as text, so listings sort by parsed date.
 //
 // - Reads go2rtc's RTSP restream, so the camera serves one client for live view + recording.
 // - Clips are fragmented MP4: a crash or power cut loses seconds, not the whole clip, and
@@ -12,17 +13,19 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const FILE_RE = /^(\d{2})-(\d{2})-(\d{2})\.mp4$/;
+const DAY_RE = /^(\d{2})_(\d{2})_(\d{4})$/;                                  // DD_MM_YYYY
+const FILE_RE = /^(\d{2})_(\d{2})_(\d{4})_(\d{2})_(\d{2})_(\d{2})\.mp4$/;  // DD_MM_YYYY_HH_MM_SS.mp4
+const OLD_DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;                              // first build: YYYY-MM-DD/HH-MM-SS.mp4
+const OLD_FILE_RE = /^(\d{2})-(\d{2})-(\d{2})\.mp4$/;
 const pad = (n) => String(n).padStart(2, '0');
-const dayStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dayStr = (d) => `${pad(d.getDate())}_${pad(d.getMonth() + 1)}_${d.getFullYear()}`;
+const dayDate = (day) => { const m = day.match(DAY_RE); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
 
 /** Local Date for a clip, from its folder + file name. */
 function clipStart(day, name) {
   const m = name.match(FILE_RE);
   if (!m || !DAY_RE.test(day)) return null;
-  const [y, mo, d] = day.split('-').map(Number);
-  return new Date(y, mo - 1, d, +m[1], +m[2], +m[3]);
+  return new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +m[6]);
 }
 
 function createRecorder(opts) {
@@ -63,7 +66,7 @@ function createRecorder(opts) {
       '-reset_timestamps', '1', '-strftime', '1',
       '-segment_format', 'mp4',
       '-segment_format_options', 'movflags=+frag_keyframe+empty_moov+default_base_moof',
-      path.join(dir, '%Y-%m-%d', '%H-%M-%S.mp4'),
+      path.join(dir, '%d_%m_%Y', '%d_%m_%Y_%H_%M_%S.mp4'),
     ];
     ff = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
     startedAt = Date.now();
@@ -115,10 +118,10 @@ function createRecorder(opts) {
   }
 
   function listDays() {
-    try { return fs.readdirSync(dir).filter((d) => DAY_RE.test(d)).sort(); } catch (e) { return []; }
+    try { return fs.readdirSync(dir).filter((d) => DAY_RE.test(d)).sort((a, b) => dayDate(a) - dayDate(b)); } catch (e) { return []; }
   }
   function listNames(day) {
-    try { return fs.readdirSync(path.join(dir, day)).filter((n) => FILE_RE.test(n)).sort(); } catch (e) { return []; }
+    try { return fs.readdirSync(path.join(dir, day)).filter((n) => FILE_RE.test(n)).sort((a, b) => clipStart(day, a) - clipStart(day, b)); } catch (e) { return []; }
   }
 
   function freeBytes() {
@@ -169,9 +172,27 @@ function createRecorder(opts) {
     if (removed) log.log(`recorder: cleanup removed ${removed} clip(s)`);
   }
 
+  /** Rename clips from the first build (YYYY-MM-DD/HH-MM-SS.mp4) to DD_MM_YYYY/DD_MM_YYYY_HH_MM_SS.mp4. */
+  function migrateOldNames() {
+    let moved = 0;
+    for (const old of fs.readdirSync(dir).filter((d) => OLD_DAY_RE.test(d))) {
+      const [, y, mo, d] = old.match(OLD_DAY_RE);
+      const day = `${d}_${mo}_${y}`;
+      fs.mkdirSync(path.join(dir, day), { recursive: true });
+      for (const n of fs.readdirSync(path.join(dir, old))) {
+        const m = n.match(OLD_FILE_RE);
+        if (!m) continue;
+        try { fs.renameSync(path.join(dir, old, n), path.join(dir, day, `${day}_${m[1]}_${m[2]}_${m[3]}.mp4`)); moved++; } catch (e) { /* */ }
+      }
+      try { fs.rmdirSync(path.join(dir, old)); } catch (e) { /* not empty */ }
+    }
+    if (moved) log.log(`recorder: renamed ${moved} clip(s) to DD_MM_YYYY_HH_MM_SS`);
+  }
+
   return {
     start() {
       fs.mkdirSync(dir, { recursive: true });
+      try { migrateOldNames(); } catch (e) { log.error('recorder: rename failed:', e.message); }
       setTimeout(spawnFfmpeg, 3000);   // give go2rtc a moment to open its RTSP port
       timers.push(setInterval(watchdog, 30e3));
       timers.push(setInterval(() => { try { cleanup(); } catch (e) { log.error('recorder cleanup:', e.message); } }, 10 * 60e3));
@@ -244,4 +265,4 @@ function createRecorder(opts) {
   };
 }
 
-module.exports = { createRecorder, dayStr };
+module.exports = { createRecorder, dayStr, dayDate };

@@ -5,8 +5,8 @@ The viewer records the camera **all the time** into 5-minute MP4 clips on the NA
 
 ```
 NAS  //192.168.0.134/BACKUPS/camera feed/
-       2026-10-02/
-         14-00-00.mp4   14-05-00.mp4   14-10-00.mp4 …    (India time, one folder per day)
+       02_10_2026/
+         02_10_2026_14_00_00.mp4   02_10_2026_14_05_00.mp4 …   (DD_MM_YYYY_HH_MM_SS, 24-hour, India time)
 ```
 
 ## How it works
@@ -34,7 +34,7 @@ NAS  //192.168.0.134/BACKUPS/camera feed/
 | `RECORD_MAX_EXPORT_MINUTES` | `240` | longest range one download can cover |
 | `TZ` | `Asia/Kolkata` | clip and folder names |
 
-API: `GET /api/recordings/status`, `/api/recordings/days`, `/api/recordings/day/2026-10-02`,
+API: `GET /api/recordings/status`, `/api/recordings/days`, `/api/recordings/day/02_10_2026`,
 `/api/recordings/export?from=2026-10-02T14:00&to=2026-10-02T14:45`; clips at
 `/recordings/<day>/<file>.mp4`.
 
