@@ -511,8 +511,23 @@
       $('recstatus').innerHTML =
         `<span><span class="dot ${st.recording ? 'on' : 'err'}"></span><b>${st.recording ? 'Recording' : 'Not recording'}</b>${cur ? ` · current clip from ${cur}` : ''}</span>` +
         `<span>keeps <b>${st.retentionDays} days</b>, max <b>${st.maxGb} GB</b>${st.lastCleanup && st.lastCleanup.totalBytes != null ? ` (using ${gb(st.lastCleanup.totalBytes)})` : ''}</span>` +
-        `<span>NAS free <b>${gb(st.freeBytes)}</b></span>` +
-        (!st.recording && st.lastErr ? `<span style="color:var(--rec)">${st.lastErr}</span>` : '');
+        (st.writingTo === 'local-buffer'
+          ? `<span style="color:var(--rec)"><b>NAS unreachable</b> — recording to the Docker host's disk; clips move to the NAS when it's back</span>`
+          : `<span>NAS free <b>${gb(st.freeBytes)}</b></span>`) +
+        (st.bufferedClips ? `<span>${st.bufferedClips} clip(s) waiting to move to the NAS</span>` : '') +
+        (st.alerts ? `<span>email alerts <b>${st.alerts.enabled ? 'on' : 'off'}</b></span>` : '') +
+        (!st.recording && st.lastErr ? `<span style="color:var(--rec)">${st.lastErr}</span>` : '') +
+        (st.camera && st.camera.lastHeal && Date.now() - new Date(st.camera.lastHeal.at) < 864e5
+          ? `<span>camera stream ${st.camera.lastHeal.ok ? 'auto-restarted' : '<b style="color:var(--rec)">restart failed</b>'} at ${hm(new Date(st.camera.lastHeal.at))}</span>` : '') +
+        (!st.recording && st.camera ? `<button id="healbtn" style="padding:6px 10px">↻ Restart camera stream</button>` : '');
+      const hb = document.getElementById('healbtn');
+      if (hb) hb.onclick = () => {
+        hb.disabled = true; hb.textContent = 'restarting… (up to a minute)';
+        fetch('/api/camera/restart-stream', { method: 'POST' }).then(r => r.json()).then(r => {
+          hb.textContent = r.ok ? 'done — video back in a few seconds' : 'failed: ' + (r.output || r.error || '');
+          setTimeout(loadRecStatus, 15000);
+        }).catch(() => { hb.textContent = 'failed'; });
+      };
     }).catch(() => {});
   }
 

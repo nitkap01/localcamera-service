@@ -35,7 +35,7 @@ RUN sh ./models/fetch-model.sh
 # ---- runtime ----
 FROM node:20-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg tini wget ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
+      ffmpeg tini wget curl ca-certificates tzdata openssh-client sshpass && rm -rf /var/lib/apt/lists/*
 
 # go2rtc turns the camera's RTSP into WebRTC. TARGETARCH is injected by buildx —
 # do NOT give it a default, that shadows the injected value and every arch ends
@@ -57,7 +57,7 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/models ./models
 COPY package.json ./
-COPY server.js counter.js recorder.js ./
+COPY server.js counter.js recorder.js camera-heal.js alerts.js ./
 COPY detectors ./detectors
 COPY public ./public
 COPY go2rtc/go2rtc.yaml ./go2rtc/go2rtc.yaml
@@ -78,13 +78,15 @@ ENV CAMERA_IP=192.168.0.143 \
     RECORD_DIR=/recordings \
     RECORD_RETENTION_DAYS=7 \
     RECORD_SEGMENT_SECONDS=300 \
-    RECORD_MIN_FREE_GB=20
-VOLUME /data /recordings
+    RECORD_MIN_FREE_GB=20 \
+    RECORD_BUFFER_DIR=/recordings-buffer
+VOLUME /data /recordings /recordings-buffer
 
 # 8080 viewer | 1984 go2rtc API+WS | 8555 WebRTC media (tcp+udp)
 EXPOSE 8080 1984 8555 8555/udp
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD wget -qO- "http://localhost:${PORT}/api/info" >/dev/null 2>&1 || exit 1
+# unhealthy = no new video recorded for 5 minutes (see /api/health)
+HEALTHCHECK --interval=60s --timeout=10s --start-period=3m --retries=3 \
+  CMD wget -qO- "http://localhost:${PORT}/api/health" >/dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

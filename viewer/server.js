@@ -35,17 +35,72 @@ const counter = COUNT_ENABLE ? createCounter({
   threads: parseInt(process.env.COUNT_THREADS || '2', 10),
 }) : null;
 
+// --- email alerts (alerts.js); credentials only in the host's .env ---
+const { createAlerter } = require('./alerts');
+const alerter = createAlerter({
+  user: process.env.ALERT_SMTP_USER || '',
+  pass: process.env.ALERT_SMTP_PASS || '',
+  to: process.env.ALERT_TO || '',
+  repeatMs: parseInt(process.env.ALERT_REPEAT_MINUTES || '30', 10) * 60e3,
+  maxPerDay: parseInt(process.env.ALERT_MAX_PER_DAY || '30', 10),
+});
+const fmtTime = (iso) => new Date(iso).toLocaleString('en-GB', { hour12: false });
+
 // --- continuous recorder (5-min clips per day folder, kept RECORD_RETENTION_DAYS) ---
 const { createRecorder } = require('./recorder');
 const RECORD_ENABLE = process.env.RECORD_ENABLE !== '0';
 const recorder = RECORD_ENABLE ? createRecorder({
   dir: process.env.RECORD_DIR || path.join(__dirname, 'recordings'),
+  bufferDir: process.env.RECORD_BUFFER_DIR || null,
+  marker: process.env.RECORD_NAS_MARKER === '' ? null : (process.env.RECORD_NAS_MARKER || '.nas-ok'),
   source: process.env.RECORD_SOURCE || 'rtsp://127.0.0.1:8554/nk-camera',
   segmentSeconds: parseInt(process.env.RECORD_SEGMENT_SECONDS || '300', 10),
   retentionDays: parseFloat(process.env.RECORD_RETENTION_DAYS || '7'),
   minFreeGb: parseFloat(process.env.RECORD_MIN_FREE_GB || '20'),
   maxGb: parseFloat(process.env.RECORD_MAX_GB || '80'),
+  onEvent(type, d) {
+    if (type === 'nas_down') alerter.alert('NAS unavailable — recording to local disk', `The NAS share isn't reachable (or its marker file is missing).\nRecording continues on the Docker host${d.bufferDir ? ` (${d.bufferDir})` : ''}; clips move to the NAS automatically once it's back.\n\nCheck on Proxmox: mount | grep nas-camera`, { key: 'nas' });
+    if (type === 'nas_up') alerter.alert('NAS is back', 'Recording to the NAS again; buffered clips are being moved over.', { key: 'nas', force: true });
+    if (type === 'recording_down') alerter.alert('Recording stopped', `No new video since ${fmtTime(d.since)}.\nLast error: ${d.lastErr || '—'}\n\nSelf-healing keeps trying. Recordings tab: http://192.168.0.246:8080`, { key: 'rec' });
+    if (type === 'recording_up') alerter.alert('Recording resumed', `Video is flowing again (down ${d.minutes} min, since ${fmtTime(d.since)}).`, { key: 'rec', force: true });
+  },
 }) : null;
+
+// --- camera self-healing: restart the camera's RTSP server if video stops (camera-heal.js) ---
+const { createCameraHealer } = require('./camera-heal');
+const healer = process.env.CAMERA_HEAL !== '0' && (RECORD_ENABLE || COUNT_ENABLE) ? createCameraHealer({
+  camIp: CAM_IP,
+  go2rtcUrl: `http://127.0.0.1:${GO2RTC_PORT}`,
+  user: process.env.CAMERA_SSH_USER || 'root',
+  password: process.env.CAMERA_SSH_PASSWORD || '',
+  staleMs: parseInt(process.env.CAMERA_STALE_SECONDS || '120', 10) * 1000,
+  cooldownMs: parseInt(process.env.CAMERA_HEAL_COOLDOWN_SECONDS || '600', 10) * 1000,
+  onEvent(type, h) {
+    if (h.ok) alerter.alert('Camera stream restarted', `Reason: ${h.reason}\nResult: ${h.output}`, { key: 'heal' });
+    else alerter.alert('Camera stream restart FAILED', `Reason: ${h.reason}\nOutput: ${h.output}\n\nThe camera may be offline or powered off (ping ${CAM_IP}). Self-healing retries every 10 min.`, { key: 'healfail' });
+  },
+}) : null;
+
+// daily summary email at ALERT_DAILY_HOUR (default 9:00 local), so silence never hides a dead alerter
+const DAILY_HOUR = parseInt(process.env.ALERT_DAILY_HOUR || '9', 10);
+let lastDaily = null;
+setInterval(() => {
+  const now = new Date();
+  if (!alerter.enabled || now.getHours() !== DAILY_HOUR || lastDaily === now.toDateString()) return;
+  lastDaily = now.toDateString();
+  const s = recorder ? recorder.status() : null;
+  const h = healer ? healer.status() : null;
+  const days = recorder ? recorder.days() : [];
+  const gb = (b) => (b / 1e9).toFixed(1);
+  const lines = s ? [
+    `Recording: ${s.recording ? 'OK' : 'NOT RECORDING'} (writing to ${s.writingTo}), current clip ${s.current || '—'}`,
+    `Kept: ${days.length} day(s), ${gb(s.lastCleanup ? s.lastCleanup.totalBytes : 0)} GB of ${s.maxGb} GB; NAS free ${s.freeBytes != null ? gb(s.freeBytes) + ' GB' : '?'}`,
+    `Buffered on local disk (waiting for NAS): ${s.bufferedClips}`,
+    ...days.slice(0, 8).map((d) => `  ${d.day}: ${d.clips} clips, ${(d.seconds / 3600).toFixed(1)} h, ${gb(d.bytes)} GB`),
+  ] : ['Recording is off.'];
+  if (h) lines.push(`Camera auto-restarts so far: ${h.heals}${h.lastHeal ? `, last ${fmtTime(h.lastHeal.at)} (${h.lastHeal.ok ? 'ok' : 'failed'})` : ''}`);
+  alerter.alert(`Daily summary — ${s && s.recording ? 'all good' : 'NEEDS ATTENTION'}`, lines.join('\n'), { key: 'daily', force: true });
+}, 60e3);
 
 // The camera serves only the HD stream (ch0_0). "SD" = HD downscaled by ffmpeg
 // (the camera's native low substream is corrupt on this firmware).
@@ -150,9 +205,29 @@ app.get('/record', (req, res) => {
 
 app.get('/api/info', (req, res) => res.json({ camera: CAM_IP, go2rtcPort: GO2RTC_PORT, rtsp: rtspUrl(), counter: COUNT_ENABLE, recorder: RECORD_ENABLE }));
 
+// Health: 200 when video is being recorded, 503 otherwise (Docker HEALTHCHECK + the host watchdog use it).
+// Starting up (first 3 min) counts as healthy.
+const BOOT = Date.now();
+app.get('/api/health', (req, res) => {
+  const s = recorder ? recorder.status() : null;
+  const h = healer ? healer.status() : null;
+  const booting = Date.now() - BOOT < 3 * 60e3;
+  const ok = !recorder || booting || s.videoAgeSeconds < 300;
+  res.status(ok ? 200 : 503).json({ ok, booting, recording: s, camera: h, alerts: alerter.status() });
+});
+app.post('/api/alerts/test', (req, res) => {
+  if (!alerter.enabled) return res.status(409).json({ error: 'alerts are off: set ALERT_SMTP_USER, ALERT_SMTP_PASS, ALERT_TO' });
+  alerter.alert('Test alert', 'If you can read this, camera alerts work.', { key: 'test', force: true }).then((ok) => res.status(ok ? 200 : 502).json({ ok }));
+});
+
 // --- recordings API ---
 const noRec = (res) => res.status(409).json({ error: 'continuous recording is off (RECORD_ENABLE=0)' });
-app.get('/api/recordings/status', (req, res) => (recorder ? res.json(recorder.status()) : noRec(res)));
+app.get('/api/recordings/status', (req, res) => (recorder ? res.json({ ...recorder.status(), camera: healer ? healer.status() : null, alerts: alerter.status() }) : noRec(res)));
+// restart the camera's RTSP server now (the same thing the self-healing does after 2 min without video)
+app.post('/api/camera/restart-stream', (req, res) => {
+  if (!healer) return res.status(409).json({ error: 'camera self-healing is off (CAMERA_HEAL=0)' });
+  healer.restart('restarted from the Recordings tab').then((r) => res.status(r && r.ok ? 200 : 502).json(r));
+});
 app.get('/api/recordings/days', (req, res) => (recorder ? res.json(recorder.days()) : noRec(res)));
 app.get('/api/recordings/day/:day', (req, res) => {
   if (!recorder) return noRec(res);
@@ -188,7 +263,11 @@ app.get('/api/recordings/export', (req, res) => {
   req.on('close', () => { try { ff.kill('SIGKILL'); } catch (e) { /* */ } });
 });
 // the clips themselves (range requests work, so the browser can seek)
-if (recorder) app.use('/recordings', express.static(recorder.dir, { acceptRanges: true, maxAge: 0, index: false, dotfiles: 'ignore' }));
+if (recorder) {
+  app.use('/recordings', express.static(recorder.dir, { acceptRanges: true, maxAge: 0, index: false, dotfiles: 'ignore' }));
+  // clips still waiting in the local buffer (NAS was down)
+  if (recorder.bufferDir) app.use('/recordings', express.static(recorder.bufferDir, { acceptRanges: true, maxAge: 0, index: false, dotfiles: 'ignore' }));
+}
 
 // --- human counter API ---
 app.get('/api/occupancy/now', (req, res) => res.json(counter ? counter.now() : { ts: null, count: null }));
@@ -216,6 +295,11 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  camera : ${CAM_IP}`);
   console.log(`  local  : http://localhost:${PORT}`);
   console.log(`  webrtc : via go2rtc on :${GO2RTC_PORT}`);
+  if (healer) {
+    healer.start();
+    console.log('  heal   : restarts the camera stream if video stops for 2 min');
+  }
+  console.log(`  alerts : ${alerter.enabled ? 'email to ' + alerter.status().to : 'off (set ALERT_SMTP_USER/PASS/TO)'}`);
   if (recorder) {
     recorder.start();
     console.log(`  record : continuous, ${recorder.status().segmentSeconds / 60}-min clips in ${recorder.dir}, kept ${recorder.status().retentionDays} days`);
@@ -229,5 +313,5 @@ app.listen(PORT, '0.0.0.0', () => {
 
 // let the recorder close its current clip cleanly on container stop
 for (const sig of ['SIGTERM', 'SIGINT']) {
-  process.on(sig, () => { if (recorder) recorder.stop(); setTimeout(() => process.exit(0), 1500); });
+  process.on(sig, () => { if (healer) healer.stop(); if (recorder) recorder.stop(); setTimeout(() => process.exit(0), 3000); });
 }

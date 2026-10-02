@@ -25,6 +25,9 @@ firmware, kills the cloud, brings the camera up on wifi without the app, exposes
   `DD_MM_YYYY_HH_MM_SS` (24-hour), one folder per day; kept **7 days, never more than 80 GB**.
   The **Recordings** tab has a day picker, a 24-hour timeline (click to play from any moment),
   and downloads of any time range as one MP4. See [`docs/RECORDING.md`](docs/RECORDING.md).
+- 🛟 **Self-healing** — restarts the camera's stream if video stops, records to local disk if the
+  NAS drops (and moves the clips back), host watchdogs restart the container, and **email alerts**
+  plus a daily summary. See [Robustness](docs/RECORDING.md#robustness--what-keeps-it-recording).
 - 📷 **Snapshot** and ⏺ **Record** (MP4, 10–60s) — straight to your device.
 - 👥 **People counter** — counts people in frame (coco-ssd or YOLO, on the server) and charts it.
 - 🎚 **Image controls** — brightness, contrast, saturation, hue, rotate, mirror, HD/SD.
@@ -105,7 +108,8 @@ scripts/find-camera.sh                # locate its DHCP address
 
 ```
 docs/PROJECT.md      full build journal — decisions, gotchas, sources
-docs/RECORDING.md    continuous recording: NAS mount, retention, deploy, troubleshooting
+docs/RECORDING.md    continuous recording: NAS mount, retention, robustness, alerts, deploy, troubleshooting
+scripts/host/        watchdog (Docker host) + NAS check and boot-order fix (Proxmox)
 docs/STATUS.md       where things stand + how it's deployed
 firmware/            yi-hack-v3 y18 firmware + fetch script + recovery notes
 sd-card/             what goes on the camera's microSD (firmware + wifi + rtsp hook)

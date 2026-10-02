@@ -31,8 +31,19 @@ node /app/server.js &
 NODE=$!
 
 # Portable watch (busybox ash has no `wait -n`): stop when either child exits.
+# On `docker stop`: stop node first (the recorder closes its clip), then go2rtc, so it ends its
+# RTSP session with the camera properly — a dropped connection can freeze the camera's RTSP server.
+stop() {
+  kill -TERM "$NODE" 2>/dev/null
+  i=0; while kill -0 "$NODE" 2>/dev/null && [ $i -lt 10 ]; do sleep 1; i=$((i+1)); done
+  kill -TERM "$G2" 2>/dev/null
+  i=0; while kill -0 "$G2" 2>/dev/null && [ $i -lt 5 ]; do sleep 1; i=$((i+1)); done
+  exit 0
+}
+trap stop TERM INT
+
 while kill -0 "$G2" 2>/dev/null && kill -0 "$NODE" 2>/dev/null; do
-  sleep 5
+  sleep 5 & wait $!    # wait is interruptible, so the trap runs right away
 done
 
 kill "$G2" "$NODE" 2>/dev/null || true

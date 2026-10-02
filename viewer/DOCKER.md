@@ -122,7 +122,8 @@ the NAS recordings mount `/mnt/camera-feed` is writable, then runs
 with `DATA_VOLUME`, the existing people-count volume. Portainer shows the container; redeploy
 with the script rather than from Portainer.
 
-Continuous-recording settings (`RECORD_*`, `TZ`) are in [`../docs/RECORDING.md`](../docs/RECORDING.md).
+Continuous-recording, self-healing and email-alert settings (`RECORD_*`, `CAMERA_*`, `ALERT_*`, `TZ`) and the
+health check (`/api/health`) are in [`../docs/RECORDING.md`](../docs/RECORDING.md).
 
 > The Dockerfile declares `ARG TARGETARCH` **without a default**. Adding one
 > (`ARG TARGETARCH=amd64`) silently shadows the value buildx injects, and every

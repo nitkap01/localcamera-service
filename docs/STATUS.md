@@ -11,6 +11,11 @@ running as a Docker container on Portainer.
 > **2026-10-02:** continuous 24/7 recording to the NAS (7 days, max 80 GB, clips named
 > `DD_MM_YYYY_HH_MM_SS`) and a Recordings tab. The image is now **built on the Docker host**
 > (`scripts/deploy.sh`) — Docker Hub is no longer used. See [`RECORDING.md`](./RECORDING.md).
+>
+> **2026-10-02 (later):** after a ~45 min outage (camera RTSP froze after a redeploy), added
+> camera self-healing, NAS fallback to local disk, clean container shutdown, `/api/health` +
+> healthcheck, host watchdogs (CT 106 + Proxmox), boot-order fix and email alerts. See
+> [`RECORDING.md` → Robustness](./RECORDING.md#robustness--what-keeps-it-recording).
 
 ---
 

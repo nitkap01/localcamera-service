@@ -29,12 +29,26 @@ services:
       RECORD_MAX_GB: "80"           # …and never more than 80 GB in total (oldest clips go first)
       RECORD_SEGMENT_SECONDS: "300" # 5-minute clips
       RECORD_MIN_FREE_GB: "20"      # if the share gets fuller than this, oldest clips go first
+      RECORD_BUFFER_DIR: "/recordings-buffer"   # local disk fallback while the NAS is down
+    env_file: .env                  # ALERT_SMTP_USER / ALERT_SMTP_PASS / ALERT_TO (email alerts) — host only
     volumes:
       - lcs-data:/data                      # people-count history (SQLite)
       - /mnt/camera-feed:/recordings        # continuous recording -> NAS (via Proxmox mount)
+      - camera-buffer:/recordings-buffer    # fallback when the NAS is unreachable; moved to the NAS later
     restart: unless-stopped
+    stop_grace_period: 20s          # let ffmpeg close the current clip
+    healthcheck:                    # unhealthy = no new video for 5 min (the host watchdog acts on it)
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 3m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
 
 volumes:
+  camera-buffer:
   lcs-data:
     external: true                  # the existing volume, so people-count history is kept
     name: ${DATA_VOLUME:?set DATA_VOLUME in .env}
