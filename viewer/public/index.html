@@ -486,7 +486,8 @@
   const two = (n) => String(n).padStart(2, '0');
   const hm = (d) => `${two(d.getHours())}:${two(d.getMinutes())}`;
   const hms = (d) => `${hm(d)}:${two(d.getSeconds())}`;
-  const gb = (b) => b == null ? '–' : (b / 1e9 >= 10 ? Math.round(b / 1e9) : (b / 1e9).toFixed(1)) + ' GB';
+  const gb = (b) => b == null ? '–' : b < 1e9 ? Math.max(1, Math.round(b / 1e6)) + ' MB' : (b / 1e9 >= 10 ? Math.round(b / 1e9) : (b / 1e9).toFixed(1)) + ' GB';
+  const dur = (sec) => sec < 3600 ? Math.max(1, Math.round(sec / 60)) + ' min' : (sec / 3600).toFixed(1) + ' h';
   const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`; };
   const dayLabel = (day) => {
     if (day === todayStr()) return 'Today';
@@ -515,7 +516,7 @@
     fetch('/api/recordings/days').then(r => r.json()).then(days => {
       const host = $('recdays');
       if (!Array.isArray(days) || !days.length) { host.innerHTML = ''; $('clips').innerHTML = '<div class="empty">No recordings yet. The first clip appears within a few minutes.</div>'; drawTimeline(); return; }
-      host.innerHTML = days.map(d => `<button data-day="${d.day}"><span>${dayLabel(d.day)}</span><small>${(d.clips * 5 / 60).toFixed(1)} h · ${gb(d.bytes)}</small></button>`).join('');
+      host.innerHTML = days.map(d => `<button data-day="${d.day}"><span>${dayLabel(d.day)}</span><small>${dur(d.seconds || 0)} · ${gb(d.bytes)}</small></button>`).join('');
       host.querySelectorAll('button').forEach(b => b.onclick = () => selectDay(b.dataset.day));
       selectDay(R.day && days.some(d => d.day === R.day) ? R.day : days[0].day);
     }).catch(() => {});

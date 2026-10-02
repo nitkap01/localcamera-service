@@ -103,6 +103,7 @@ function createRecorder(opts) {
     if (c && (!current || c.name !== current.name || c.day !== current.day || c.size > current.size)) {
       lastGrowth = Date.now();
       current = c;
+      if (Date.now() - startedAt > 60e3) lastErr = null;   // video is flowing again
     }
     if (Date.now() - startedAt > 5 * 60e3 && Date.now() - lastGrowth < 60e3) restarts = 0;   // healthy again
     if (Date.now() - lastGrowth > 90e3) {
@@ -158,7 +159,7 @@ function createRecorder(opts) {
   return {
     start() {
       fs.mkdirSync(dir, { recursive: true });
-      spawnFfmpeg();
+      setTimeout(spawnFfmpeg, 3000);   // give go2rtc a moment to open its RTSP port
       timers.push(setInterval(watchdog, 30e3));
       timers.push(setInterval(() => { try { cleanup(); } catch (e) { log.error('recorder cleanup:', e.message); } }, 10 * 60e3));
       setTimeout(() => { try { cleanup(); } catch (e) { /* */ } }, 60e3);
@@ -184,10 +185,10 @@ function createRecorder(opts) {
     /** Days with clips, newest first: [{ day, clips, bytes, first, last }] */
     days() {
       return listDays().reverse().map((day) => {
-        const names = listNames(day);
-        let bytes = 0;
-        for (const n of names) { try { bytes += fs.statSync(path.join(dir, day, n)).size; } catch (e) { /* */ } }
-        return { day, clips: names.length, bytes, first: names[0] || null, last: names[names.length - 1] || null };
+        const list = this.clips(day) || [];
+        const bytes = list.reduce((n, c) => n + c.bytes, 0);
+        const seconds = Math.round(list.reduce((n, c) => n + (new Date(c.end) - new Date(c.start)) / 1000, 0));
+        return { day, clips: list.length, bytes, seconds, first: list[0]?.name || null, last: list[list.length - 1]?.name || null };
       }).filter((d) => d.clips > 0);
     },
     /** Clips of one day: [{ name, start, end, bytes, live }] (start/end as ISO) */
@@ -200,8 +201,15 @@ function createRecorder(opts) {
         try { st = fs.statSync(p); } catch (e) { return null; }
         const start = clipStart(day, name);
         const next = names[i + 1] ? clipStart(day, names[i + 1]) : null;
-        const end = new Date(Math.min(st.mtimeMs, next ? next.getTime() : Infinity, start.getTime() + segmentSeconds * 1000 + 30e3));
         const live = Boolean(current && current.day === day && current.name === name && ff);
+        // a network share may not update mtime while a file is written, so the clip's end is the next
+        // clip's start when they're back to back, "now" for the live clip, else a best guess
+        const full = start.getTime() + segmentSeconds * 1000;
+        let endMs;
+        if (next && next.getTime() - start.getTime() <= segmentSeconds * 1000 + 60e3) endMs = next.getTime();
+        else if (live) endMs = Date.now();
+        else endMs = st.mtimeMs > start.getTime() + 10e3 ? Math.min(st.mtimeMs, full + 30e3) : full;
+        const end = new Date(endMs);
         return { name, start: start.toISOString(), end: end.toISOString(), bytes: st.size, live };
       }).filter(Boolean);
     },
