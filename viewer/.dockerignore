@@ -11,3 +11,5 @@ DOCKER.md
 docker-compose.yml
 Dockerfile
 .dockerignore
+.env
+recordings

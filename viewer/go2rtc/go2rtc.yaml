@@ -7,6 +7,9 @@ api:
   listen: ":1984"     # signaling + web API (browser connects here for WebRTC)
   origin: "*"         # allow the viewer page (served on :8080) to open the WS
 
+rtsp:
+  listen: "127.0.0.1:8554"   # local restream for the continuous recorder (not exposed to the LAN)
+
 webrtc:
   listen: ":8555"     # webrtc media port (LAN)
 

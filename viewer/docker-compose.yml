@@ -1,42 +1,39 @@
-# Portainer stack for the localcamera-service viewer.
-# Paste into Portainer > Stacks > Add stack, edit the image + CAMERA_IP, deploy.
+# localcamera-service viewer — built ON the Docker host, nothing goes to Docker Hub.
 #
-# WebRTC needs go2rtc to advertise an IP your phone can reach. Pick ONE option:
+# Deploy/update from a machine with this repo:   scripts/deploy.sh
+# (copies viewer/ to the host, then `docker compose up -d --build` there).
 #
-# ── Option A: host networking (simplest — Linux Docker host only) ─────────────
-# go2rtc sees the host's real LAN IP, so WebRTC "just works". Does NOT work on
-# Docker Desktop for Mac/Windows (host mode isn't real there — use Option B).
+# Secrets live in viewer/.env on the host (never in git) — see .env.example:
+#   NAS_USER, NAS_PASSWORD   for the recordings share
+#
+# Host networking: go2rtc sees the host's real LAN IP, so WebRTC works from phones
+# without extra settings (Linux Docker hosts only).
 services:
   localcamera-viewer:
-    image: nitinkapoor/localcamera-viewer:v5   # <-- bump the tag per build; Portainer caches :latest
+    build: .
+    image: localcamera-viewer:local
+    pull_policy: never              # local image only; never look on Docker Hub
     container_name: localcamera-viewer
     network_mode: host
     environment:
-      CAMERA_IP: "192.168.0.143"   # <-- REQUIRED: your camera's LAN IP
-      DETECTOR: "cocossd"          # detection engine: cocossd | yolo (also switchable in the People tab)
+      CAMERA_IP: "192.168.0.143"    # the camera's LAN IP
+      DETECTOR: "cocossd"           # people-counter engine: cocossd | yolo (switchable in the People tab)
+      TZ: "Asia/Kolkata"            # clip and folder names use this time zone
+      RECORD_RETENTION_DAYS: "7"    # continuous recording kept for 7 days
+      RECORD_SEGMENT_SECONDS: "300" # 5-minute clips
+      RECORD_MIN_FREE_GB: "20"      # if the share gets fuller than this, oldest clips go first
     volumes:
-      - lcs-data:/data             # people-count history (SQLite) — survives redeploys
+      - lcs-data:/data              # people-count history (SQLite)
+      - lcs-recordings:/recordings  # continuous recording -> NAS share
     restart: unless-stopped
 
 volumes:
   lcs-data:
-
-# ── Option B: bridge networking (Docker Desktop, or if you can't use host) ────
-# Publish the three ports AND tell go2rtc the host's LAN IP so phones can reach
-# the WebRTC media. Without WEBRTC_CANDIDATE, mobile falls back to slow MJPEG.
-#
-# services:
-#   localcamera-viewer:
-#     image: nitinkapoor/localcamera-viewer:latest
-#     container_name: localcamera-viewer
-#     ports:
-#       - "8080:8080"          # web UI
-#       - "1984:1984"          # go2rtc API / WebRTC signaling
-#       - "8555:8555"          # WebRTC media (tcp)
-#       - "8555:8555/udp"      # WebRTC media (udp)
-#     environment:
-#       CAMERA_IP: "192.168.0.143"
-#       WEBRTC_CANDIDATE: "192.168.0.10:8555"   # <-- the DOCKER HOST's LAN IP
-#     volumes:
-#       - lcs-data:/data
-#     restart: unless-stopped
+    external: true                  # created by the original Portainer stack; reused so history is kept
+    name: ${DATA_VOLUME:-lcs-data}
+  lcs-recordings:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//192.168.0.134/BACKUPS/camera feed"
+      o: "addr=192.168.0.134,username=${NAS_USER},password=${NAS_PASSWORD},vers=3.0,uid=0,gid=0,file_mode=0664,dir_mode=0775,noserverino"

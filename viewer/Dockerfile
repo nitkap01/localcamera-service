@@ -35,7 +35,7 @@ RUN sh ./models/fetch-model.sh
 # ---- runtime ----
 FROM node:20-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg tini wget ca-certificates && rm -rf /var/lib/apt/lists/*
+      ffmpeg tini wget ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
 
 # go2rtc turns the camera's RTSP into WebRTC. TARGETARCH is injected by buildx —
 # do NOT give it a default, that shadows the injected value and every arch ends
@@ -57,7 +57,7 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/models ./models
 COPY package.json ./
-COPY server.js counter.js ./
+COPY server.js counter.js recorder.js ./
 COPY detectors ./detectors
 COPY public ./public
 COPY go2rtc/go2rtc.yaml ./go2rtc/go2rtc.yaml
@@ -67,12 +67,19 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # CAMERA_IP is the only one you must set. DB_PATH lives on a volume so the
 # people-count history survives redeploys. DETECTOR picks the engine at boot
 # (cocossd | yolo); it can also be switched at runtime from the People tab.
+# RECORD_DIR holds the continuous recording (5-min clips, one folder per day); mount
+# storage there (the compose file mounts a NAS share). TZ sets the clip/folder times.
 ENV CAMERA_IP=192.168.0.143 \
     PORT=8080 \
     GO2RTC_PORT=1984 \
     DB_PATH=/data/occupancy.db \
-    DETECTOR=cocossd
-VOLUME /data
+    DETECTOR=cocossd \
+    TZ=Asia/Kolkata \
+    RECORD_DIR=/recordings \
+    RECORD_RETENTION_DAYS=7 \
+    RECORD_SEGMENT_SECONDS=300 \
+    RECORD_MIN_FREE_GB=20
+VOLUME /data /recordings
 
 # 8080 viewer | 1984 go2rtc API+WS | 8555 WebRTC media (tcp+udp)
 EXPOSE 8080 1984 8555 8555/udp
