@@ -506,7 +506,7 @@
       const cur = st.current ? st.current.split('/')[1].replace('.mp4', '').replace(/-/g, ':') : null;
       $('recstatus').innerHTML =
         `<span><span class="dot ${st.recording ? 'on' : 'err'}"></span><b>${st.recording ? 'Recording' : 'Not recording'}</b>${cur ? ` · current clip from ${cur}` : ''}</span>` +
-        `<span>keeps <b>${st.retentionDays} days</b></span>` +
+        `<span>keeps <b>${st.retentionDays} days</b>, max <b>${st.maxGb} GB</b>${st.lastCleanup && st.lastCleanup.totalBytes != null ? ` (using ${gb(st.lastCleanup.totalBytes)})` : ''}</span>` +
         `<span>NAS free <b>${gb(st.freeBytes)}</b></span>` +
         (!st.recording && st.lastErr ? `<span style="color:var(--rec)">${st.lastErr}</span>` : '');
     }).catch(() => {});

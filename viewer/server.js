@@ -44,6 +44,7 @@ const recorder = RECORD_ENABLE ? createRecorder({
   segmentSeconds: parseInt(process.env.RECORD_SEGMENT_SECONDS || '300', 10),
   retentionDays: parseFloat(process.env.RECORD_RETENTION_DAYS || '7'),
   minFreeGb: parseFloat(process.env.RECORD_MIN_FREE_GB || '20'),
+  maxGb: parseFloat(process.env.RECORD_MAX_GB || '80'),
 }) : null;
 
 // The camera serves only the HD stream (ch0_0). "SD" = HD downscaled by ffmpeg

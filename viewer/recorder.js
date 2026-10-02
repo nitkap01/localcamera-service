@@ -7,7 +7,7 @@
 //   the clip being written can already be played.
 // - Watchdog restarts ffmpeg if it exits or the current clip stops growing.
 // - Retention: clips older than RECORD_RETENTION_DAYS are deleted; if free space drops under
-//   RECORD_MIN_FREE_GB the oldest clips go first.
+//   RECORD_MIN_FREE_GB, or the recordings total more than RECORD_MAX_GB, the oldest clips go first.
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -32,6 +32,7 @@ function createRecorder(opts) {
     segmentSeconds = 300,
     retentionDays = 7,
     minFreeGb = 20,
+    maxGb = 80,
     log = console,
   } = opts;
 
@@ -131,17 +132,29 @@ function createRecorder(opts) {
     for (const day of listDays()) {
       for (const name of listNames(day)) {
         const t = clipStart(day, name);
-        if (t) all.push({ day, name, t: t.getTime() });
+        if (!t) continue;
+        let size = 0;
+        try { size = fs.statSync(path.join(dir, day, name)).size; } catch (e) { /* */ }
+        all.push({ day, name, t: t.getTime(), size });
       }
     }
     const isCurrent = (c) => current && c.day === current.day && c.name === current.name;
     for (const c of all) {
       if (c.t < cutoff && !isCurrent(c)) { try { fs.unlinkSync(path.join(dir, c.day, c.name)); removed++; } catch (e) { /* */ } }
     }
+    // size cap: keep the recordings at or under maxGb, oldest first
+    const kept = all.filter((x) => x.t >= cutoff);
+    let total = kept.reduce((n, c) => n + c.size, 0);
+    const maxBytes = maxGb * 1e9;
+    for (const c of kept) {
+      if (total <= maxBytes) break;
+      if (isCurrent(c)) continue;
+      try { fs.unlinkSync(path.join(dir, c.day, c.name)); total -= c.size; c.gone = true; removed++; } catch (e) { /* */ }
+    }
     // disk guard: oldest first until there's room again
     const minFree = minFreeGb * 1e9;
     let free = freeBytes();
-    for (const c of all.filter((x) => x.t >= cutoff)) {
+    for (const c of kept.filter((x) => !x.gone)) {
       if (free == null || free >= minFree) break;
       if (isCurrent(c)) continue;
       const p = path.join(dir, c.day, c.name);
@@ -152,7 +165,7 @@ function createRecorder(opts) {
     for (const day of listDays()) {
       if (!keep.has(day) && listNames(day).length === 0) { try { fs.rmdirSync(path.join(dir, day)); } catch (e) { /* not empty */ } }
     }
-    lastCleanup = { at: new Date().toISOString(), removed };
+    lastCleanup = { at: new Date().toISOString(), removed, totalBytes: total };
     if (removed) log.log(`recorder: cleanup removed ${removed} clip(s)`);
   }
 
@@ -164,6 +177,8 @@ function createRecorder(opts) {
       timers.push(setInterval(() => { try { cleanup(); } catch (e) { log.error('recorder cleanup:', e.message); } }, 10 * 60e3));
       setTimeout(() => { try { cleanup(); } catch (e) { /* */ } }, 60e3);
     },
+    /** Run retention now (also runs every 10 minutes). */
+    cleanup() { cleanup(); return lastCleanup; },
     stop() {
       stopping = true;
       timers.forEach(clearInterval);
@@ -177,6 +192,7 @@ function createRecorder(opts) {
         lastErr,
         restarts,
         retentionDays,
+        maxGb,
         segmentSeconds,
         freeBytes: freeBytes(),
         lastCleanup,

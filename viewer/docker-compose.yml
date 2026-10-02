@@ -25,7 +25,8 @@ services:
       WEBRTC_CANDIDATE: "192.168.0.246:8555"
       DETECTOR: "yolo"              # people-counter engine: cocossd | yolo (switchable in the People tab)
       TZ: "Asia/Kolkata"            # clip and folder names use this time zone
-      RECORD_RETENTION_DAYS: "7"    # continuous recording kept for 7 days
+      RECORD_RETENTION_DAYS: "7"    # continuous recording kept for 7 days…
+      RECORD_MAX_GB: "80"           # …and never more than 80 GB in total (oldest clips go first)
       RECORD_SEGMENT_SECONDS: "300" # 5-minute clips
       RECORD_MIN_FREE_GB: "20"      # if the share gets fuller than this, oldest clips go first
     volumes:

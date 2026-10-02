@@ -19,8 +19,9 @@ NAS  //192.168.0.134/BACKUPS/camera feed/
 - Clips are **fragmented MP4**: a crash or power cut loses seconds, and the clip being written
   can already be played.
 - **Watchdog**: ffmpeg is restarted if it exits or the current clip stops growing for 90 s.
-- **Retention**: every 10 minutes, clips older than `RECORD_RETENTION_DAYS` are deleted; if the
-  share has less than `RECORD_MIN_FREE_GB` free, the oldest clips go first.
+- **Retention**: every 10 minutes, clips older than `RECORD_RETENTION_DAYS` (7) are deleted, and if
+  the recordings total more than `RECORD_MAX_GB` (80 GB) the oldest go until they fit. If the share
+  itself drops under `RECORD_MIN_FREE_GB` free, the oldest go too.
 
 | Variable | Default | |
 |---|---|---|
@@ -28,6 +29,7 @@ NAS  //192.168.0.134/BACKUPS/camera feed/
 | `RECORD_DIR` | `/recordings` | where clips go (mount the NAS here) |
 | `RECORD_RETENTION_DAYS` | `7` | how long to keep clips |
 | `RECORD_SEGMENT_SECONDS` | `300` | clip length |
+| `RECORD_MAX_GB` | `80` | total size cap; oldest clips are deleted first when over it |
 | `RECORD_MIN_FREE_GB` | `20` | free-space floor on the share |
 | `RECORD_MAX_EXPORT_MINUTES` | `240` | longest range one download can cover |
 | `TZ` | `Asia/Kolkata` | clip and folder names |
