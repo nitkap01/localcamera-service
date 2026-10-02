@@ -8,8 +8,9 @@ cloud, streaming locally, with a self-hosted browser viewer (live video, capture
 image controls, live detection overlay) plus a server-side people counter —
 running as a Docker container on Portainer.
 
-> **Action pending:** the Portainer stack still points at `:v4`. Redeploy it with
-> **`:v5`** to pick up the visible overlay + Hide UI. See _How it's deployed_.
+> **2026-10-02:** continuous 24/7 recording to the NAS (7 days, max 80 GB, clips named
+> `DD_MM_YYYY_HH_MM_SS`) and a Recordings tab. The image is now **built on the Docker host**
+> (`scripts/deploy.sh`) — Docker Hub is no longer used. See [`RECORDING.md`](./RECORDING.md).
 
 ---
 
@@ -60,54 +61,16 @@ running as a Docker container on Portainer.
 
 ## How it's deployed
 
-**Container** (Docker Hub): `nitinkapoor/localcamera-viewer` — multi-arch
-(`linux/amd64` + `linux/arm64`), Debian base (`node:20-slim`).
-- **Deploy the versioned tag** `:v5`, not `:latest`. Portainer caches `latest`
-  and won't re-pull it, which served a stale image (that's what caused the
-  `/sbin/tini` start error). A fresh tag forces a clean pull. Bump the tag on
-  each new build.
-
-**Portainer host** `192.168.0.246`, host networking, DB on a volume:
-```yaml
-services:
-  localcamera-viewer:
-    image: nitinkapoor/localcamera-viewer:v5
-    container_name: localcamera-viewer
-    network_mode: host
-    environment:
-      CAMERA_IP: "192.168.0.143"
-      DETECTOR: "cocossd"       # or "yolo" — also switchable live in the People tab
-    volumes:
-      - lcs-data:/data          # people-count history — survives redeploys
-    restart: unless-stopped
-volumes:
-  lcs-data:
-```
-Open **http://192.168.0.246:8080**.
-
-### Release history (Docker Hub tags)
-
-Always deploy the **numbered tag**. `:latest` also moves, but Portainer caches it
-and won't re-pull, which has already cost us one confusing outage.
-
-| Tag | What it added | Notes |
-|---|---|---|
-| `v2` | first working published image | ⚠️ its **arm64** variant contains an **x86-64 go2rtc** — broken on ARM |
-| `v3` | YOLO detection mode (2nd engine, runtime-swappable) | fixes the arm64 binary bug |
-| `v4` | live detection overlay (People / Hands / Face) | ⚠️ overlay never rendered — drew into a hidden canvas |
-| **`v5`** | **overlay actually visible + Hide UI** | **current — deploy this** |
-
-**Local dev** (Mac): `cd viewer && npm start` (runs go2rtc + node). Pin **Node 20**
-— `better-sqlite3` is ABI-locked to the Node it built for, and nvm here also has
-v22/v25 which fail to load it.
-
-**Env vars**: `CAMERA_IP` (required) · `WEBRTC_CANDIDATE=<host-ip>:8555` (bridge
-networking only) · `PORT` (8080) · `GO2RTC_PORT` (1984) · `DB_PATH`
-(`/data/occupancy.db`) · `DETECTOR` (`cocossd`) · `COUNT_INTERVAL_MS` (4000) ·
-`COUNT_MIN_SCORE` (0.45) · `COUNT_THREADS` (2) · `COUNT_ENABLE` (1) ·
-`YOLO_MODEL`.
-
----
+- **Container `camera`** on the Docker host **192.168.0.246** (Proxmox CT 106, `portainer-ct`),
+  bridge networking with ports 8080 / 1984 / 8555 published and
+  `WEBRTC_CANDIDATE=192.168.0.246:8555`, restart `unless-stopped`.
+- **Image built on the host** (`localcamera-viewer:local`) by `scripts/deploy.sh` →
+  `docker compose up -d --build` from `~/localcamera-viewer`. Nothing goes through Docker Hub.
+  The previous Docker Hub container is kept, stopped, as `camera-v5-old` for rollback.
+- **People-count history** stays on its original Docker volume (`DATA_VOLUME` in the host's `.env`).
+- **Recordings** go to the NAS `//192.168.0.134/BACKUPS/camera feed`, mounted on the Proxmox host
+  (`/mnt/nas-camera-feed`, fstab) and passed into CT 106 as `/mnt/camera-feed` (`mp0`).
+  Details: [`RECORDING.md`](./RECORDING.md).
 
 ## Key decisions & gotchas (so we don't relearn them)
 

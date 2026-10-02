@@ -1,4 +1,4 @@
-# Running the viewer in Docker (Docker Hub → Portainer)
+# Running the viewer in Docker
 
 One image bundles everything the viewer needs: **Node + Express**, **ffmpeg**
 (snapshot / record / MJPEG), and **go2rtc** (WebRTC). Point it at your camera's
@@ -107,47 +107,26 @@ the viewer — they only matter when flashing/finding the camera. Don't put them
 | 1984 | tcp | go2rtc API / WebRTC signaling (WebSocket) |
 | 8555 | tcp + udp | WebRTC media |
 
-## Build & push to Docker Hub
+## Build & deploy (on the Docker host, no Docker Hub)
 
-Multi-arch (works on an x86 server *and* an ARM Pi). **Bump the version tag on
-every build** — Portainer caches `:latest` and won't re-pull it.
-
-```bash
-cd viewer
-docker login
-docker buildx create --use --name lcs 2>/dev/null || docker buildx use lcs
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t nitinkapoor/localcamera-viewer:v5 \
-  -t nitinkapoor/localcamera-viewer:latest \
-  --push .
-```
-
-Single-arch (just your server's CPU) is simpler if you don't need ARM:
+The image is built **on the Docker host** from this folder and run with `docker-compose.yml`
+(`image: localcamera-viewer:local`, `pull_policy: never`). From a machine with the repo:
 
 ```bash
-cd viewer
-docker build -t nitinkapoor/localcamera-viewer:v5 .
-docker push nitinkapoor/localcamera-viewer:v5
+scripts/deploy.sh
 ```
+
+It copies `viewer/` to `~/localcamera-viewer` on the host (ssh alias `portainer`), checks that
+the NAS recordings mount `/mnt/camera-feed` is writable, then runs
+`docker compose up -d --build`. The host keeps `~/localcamera-viewer/.env` (never committed)
+with `DATA_VOLUME`, the existing people-count volume. Portainer shows the container; redeploy
+with the script rather than from Portainer.
+
+Continuous-recording settings (`RECORD_*`, `TZ`) are in [`../docs/RECORDING.md`](../docs/RECORDING.md).
 
 > The Dockerfile declares `ARG TARGETARCH` **without a default**. Adding one
 > (`ARG TARGETARCH=amd64`) silently shadows the value buildx injects, and every
 > architecture ends up with amd64 binaries. Don't reintroduce it.
-
-## Deploy on Portainer
-
-**Option A — Stack (recommended).** Portainer → *Stacks* → *Add stack*, paste
-`docker-compose.yml` (edit the image name + `CAMERA_IP`), deploy. It uses
-`network_mode: host`, which is the simplest way to get WebRTC working on a LAN.
-
-**Option B — Container.** Portainer → *Containers* → *Add container*:
-- Image: `nitinkapoor/localcamera-viewer:latest`
-- Network: **host** (easiest for WebRTC), or Bridge + publish 8080/1984/8555
-- Env: `CAMERA_IP=192.168.0.143`
-- Restart policy: *Unless stopped*
-
-Then open `http://<docker-host-ip>:8080` from your phone or laptop on the same wifi.
 
 ## Notes
 

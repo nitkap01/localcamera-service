@@ -1,8 +1,9 @@
 # 📹 localcamera-service
 
 Turn a cheap Xiaomi Yi "Ants" camera into a **fully local, cloud-free IP camera** with a
-browser viewer — live **WebRTC** video, snapshots, recording, and image controls — running
-entirely on your own network. No Yi app, no account, nothing phones home.
+browser viewer — live **WebRTC** video, **24/7 recording to a NAS** (7 days kept), snapshots,
+a people counter and image controls — running entirely on your own network. No Yi app, no
+account, nothing phones home.
 
 ![Node](https://img.shields.io/badge/Node-20-3c873a)
 ![ffmpeg](https://img.shields.io/badge/ffmpeg-required-007808)
@@ -20,7 +21,12 @@ firmware, kills the cloud, brings the camera up on wifi without the app, exposes
 
 - 🎥 **Live view in any browser** — WebRTC (sub-second) with an MJPEG fallback. Works on
   iPhone Safari and Android/desktop Chrome.
+- 🎞 **Continuous recording** — 24/7 to the NAS in 5-minute MP4 clips named
+  `DD_MM_YYYY_HH_MM_SS` (24-hour), one folder per day; kept **7 days, never more than 80 GB**.
+  The **Recordings** tab has a day picker, a 24-hour timeline (click to play from any moment),
+  and downloads of any time range as one MP4. See [`docs/RECORDING.md`](docs/RECORDING.md).
 - 📷 **Snapshot** and ⏺ **Record** (MP4, 10–60s) — straight to your device.
+- 👥 **People counter** — counts people in frame (coco-ssd or YOLO, on the server) and charts it.
 - 🎚 **Image controls** — brightness, contrast, saturation, hue, rotate, mirror, HD/SD.
 - 🚫 **Watermark removal** — hides the burned-in "YI" logo.
 - ☁️ **No cloud** — the camera never talks to the internet.
@@ -50,14 +56,33 @@ firmware, kills the cloud, brings the camera up on wifi without the app, exposes
         rtsp://<cam>:554/ch0_0.h264   ← the camera (rRTSPServer + h264grabber)
 ```
 
-- **go2rtc** re-serves the camera's RTSP as WebRTC (low latency, no transcode).
-- **Node + ffmpeg** serves the page and does snapshot / record / MJPEG, applying filters
-  (rotate, mirror, `delogo` for the watermark, `eq`/`hue` for image adjust, `scale` for SD).
-- Nothing is stored server-side — captures stream straight to your browser.
+- **go2rtc** holds the **only** connection to the camera and re-serves it: WebRTC for the
+  browser, frames for the people counter, and a local RTSP restream (`127.0.0.1:8554`) for
+  everything else. The camera's RTSP server only copes with a couple of clients — extra direct
+  connections can freeze it — so nothing else talks to the camera.
+- **Node + ffmpeg** serves the page and does snapshot / record / MJPEG from the restream,
+  applying filters (rotate, mirror, `delogo` for the watermark, `eq`/`hue`, `scale` for SD).
+- **recorder.js** runs one ffmpeg that copies the restream (no re-encode) into 5-minute clips on
+  the NAS, with a watchdog and 7-day / 80 GB retention.
+
+## Deployment
+
+Runs as one container (`camera`) on the Docker host **192.168.0.246** (Proxmox CT 106,
+managed alongside Portainer). The image is **built on that host — nothing is pushed to
+Docker Hub**:
+
+```bash
+scripts/deploy.sh      # copy viewer/ to the host → docker compose up -d --build → restart
+```
+
+Viewer: **http://192.168.0.246:8080**. Recordings land on the NAS share
+`//192.168.0.134/BACKUPS/camera feed`, which the Proxmox host mounts and passes into CT 106
+(an unprivileged LXC can't mount SMB itself). Setup, settings and troubleshooting:
+[`docs/RECORDING.md`](docs/RECORDING.md). Container settings: [`viewer/DOCKER.md`](viewer/DOCKER.md).
 
 ## Quick start
 
-**Watch the camera** (camera already flashed & streaming):
+**Run the viewer on your own machine** (camera already flashed & streaming):
 ```bash
 cd viewer
 npm install
@@ -80,10 +105,12 @@ scripts/find-camera.sh                # locate its DHCP address
 
 ```
 docs/PROJECT.md      full build journal — decisions, gotchas, sources
+docs/RECORDING.md    continuous recording: NAS mount, retention, deploy, troubleshooting
+docs/STATUS.md       where things stand + how it's deployed
 firmware/            yi-hack-v3 y18 firmware + fetch script + recovery notes
 sd-card/             what goes on the camera's microSD (firmware + wifi + rtsp hook)
-scripts/             cam-ssh / cam-scp / find-camera / camera-info / prep-sd / fetch-*
-viewer/              the web viewer — Node/Express + ffmpeg + go2rtc
+scripts/             deploy (build + run on the Docker host), cam-ssh / cam-scp / find-camera / camera-info / prep-sd
+viewer/              the web viewer — Node/Express + ffmpeg + go2rtc + recorder + people counter
 tv-app/              NKCam — a Samsung Tizen TV app for the live view (see tv-app/README.md)
 config.env           local wifi/IP settings (gitignored)
 ```
@@ -91,6 +118,8 @@ config.env           local wifi/IP settings (gitignored)
 ## Security
 
 - **LAN only.** Never expose ports 22 / 80 / 554 (camera) or 8080 / 1984 (viewer) to the internet.
+  The viewer and the recordings have no login — anyone on the LAN can watch and download.
+- The NAS password lives only on the Proxmox host (`/root/.smb-nas-camera`, root-only), never in git.
 - The camera's root password is blank by default — change it: `scripts/cam-ssh.sh` then `passwd`.
 - Wifi password and firmware binaries are gitignored; nothing secret is committed.
 

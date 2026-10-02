@@ -11,8 +11,8 @@ NAS  //192.168.0.134/BACKUPS/camera feed/
 
 ## How it works
 
-- `viewer/recorder.js` runs one ffmpeg that **copies** the stream (no re-encode, ~0.6 Mbit/s,
-  ≈ 46–70 GB per week) into clips aligned to the clock.
+- `viewer/recorder.js` runs one ffmpeg that **copies** the stream (no re-encode, ~1 Mbit/s,
+  ≈ 75 GB per week) into clips aligned to the clock.
 - It reads **go2rtc's local restream** (`rtsp://127.0.0.1:8554/nk-camera`), never the camera
   directly. The camera's RTSP server (rRTSPServer) only copes with a couple of clients; extra
   direct connections can freeze it. Snapshot / Record / MJPEG use the restream for the same reason.
