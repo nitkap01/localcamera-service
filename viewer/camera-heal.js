@@ -18,6 +18,10 @@ const RESTART_SCRIPT = [
   'for n in rRTSPServer h264grabber rmm; do for p in $(ps w | grep "$n" | grep -v grep | while read pid rest; do echo $pid; done); do'
     + ' echo "diag: $n pid $p state $(cut -d" " -f3 /proc/$p/stat) wchan $(cat /proc/$p/wchan 2>/dev/null) cpu $(cut -d" " -f14-15 /proc/$p/stat)"; done; done',
   'echo "diag: rs.log: $(tail -2 /tmp/rs.log 2>/dev/null | tr "\\n" " ")"; echo "diag: grab.log: $(tail -2 /tmp/grab.log 2>/dev/null | tr "\\n" " ")"',
+  // network evidence for the stalls: ARP table and the stream server's UDP sockets (6970/6971 = 1B3A/1B3B)
+  'while read l; do echo "diag: arp: $l"; done < /proc/net/arp',
+  'grep -iE ":(1B3A|1B3B) " /proc/net/udp | while read l; do echo "diag: udp: $l"; done',
+  'echo "diag: wlan: $(grep wlan0 /proc/net/dev | tr -s " ")"',
   'cp /tmp/rs.log /tmp/rs.log.prev 2>/dev/null; cp /tmp/grab.log /tmp/grab.log.prev 2>/dev/null',
   'for p in $(ps w | grep -E "rRTSPServer|h264grabber" | grep -v grep | while read pid rest; do echo $pid; done); do kill $p; done',
   'sleep 2',
