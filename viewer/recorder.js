@@ -39,6 +39,8 @@ function createRecorder(opts) {
     marker = '.nas-ok',             // must exist in dir for it to count as the real NAS (null = don't check)
     source,
     segmentSeconds = 300,
+    fps = 20,                    // the camera sends 20 frames/s but stamps them as 25 (clips played 25% fast);
+                                 // re-stamp each frame at 1/fps s while copying. 0 = keep the camera's timestamps
     retentionDays = 7,
     minFreeGb = 20,
     maxGb = 80,
@@ -120,6 +122,7 @@ function createRecorder(opts) {
       '-hide_banner', '-loglevel', 'warning',
       ...(source.startsWith('rtsp') ? ['-rtsp_transport', 'tcp', '-timeout', '15000000'] : []), '-i', source,
       '-map', '0:v', '-c', 'copy',
+      ...(fps > 0 ? ['-bsf:v', `setts=ts=N/(${fps}*TB):duration=1/(${fps}*TB)`] : []),
       '-f', 'segment', '-segment_time', String(segmentSeconds), '-segment_atclocktime', '1',
       '-reset_timestamps', '1', '-strftime', '1',
       '-segment_format', 'mp4',

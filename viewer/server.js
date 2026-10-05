@@ -55,6 +55,7 @@ const recorder = RECORD_ENABLE ? createRecorder({
   marker: process.env.RECORD_NAS_MARKER === '' ? null : (process.env.RECORD_NAS_MARKER || '.nas-ok'),
   source: process.env.RECORD_SOURCE || 'rtsp://127.0.0.1:8554/nk-camera',
   segmentSeconds: parseInt(process.env.RECORD_SEGMENT_SECONDS || '300', 10),
+  fps: parseFloat(process.env.RECORD_FPS ?? '20'),
   retentionDays: parseFloat(process.env.RECORD_RETENTION_DAYS || '7'),
   minFreeGb: parseFloat(process.env.RECORD_MIN_FREE_GB || '20'),
   maxGb: parseFloat(process.env.RECORD_MAX_GB || '80'),

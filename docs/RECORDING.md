@@ -31,6 +31,7 @@ NAS  //192.168.0.134/BACKUPS/camera feed/
 | Variable | Default | |
 |---|---|---|
 | `RECORD_ENABLE` | `1` | `0` turns continuous recording off |
+| `RECORD_FPS` | `20` | the camera sends 20 frames/s but stamps them as 25; frames are re-stamped at 1/20 s (copy, no re-encode) so clips play at real speed. `0` keeps the camera's timestamps |
 | `RECORD_DIR` | `/recordings` | where clips go (mount the NAS here) |
 | `RECORD_RETENTION_DAYS` | `7` | how long to keep clips |
 | `RECORD_SEGMENT_SECONDS` | `300` | clip length |
