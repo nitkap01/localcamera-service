@@ -119,7 +119,7 @@ the dropped connection, and for ~45 minutes nothing restarted it or told anyone.
 | NAS fallback | `recorder.js` | NAS gone → record to the Docker host's disk, move clips back later |
 | Clean shutdown | `docker-entrypoint.sh` | `docker stop` stops node (clip closed), then go2rtc (RTSP session ended properly — avoids the freeze) |
 | Health check | `/api/health`, compose `healthcheck` | container shows *unhealthy* after 5 min without new video |
-| Host watchdog | `scripts/host/camera-watchdog.sh`, nitin's cron on CT 106, every 2 min | container stopped → start it; unhealthy 3× in a row → restart it (max once per 30 min) |
+| Host watchdog | `scripts/host/camera-watchdog.sh`, nitin's cron on CT 106, every 2 min | container stopped → start it; NAS share back on CT 106 but the container still sees it down 2× in a row → restart it to reattach (max once per 30 min); unhealthy 3× in a row → restart it (max once per 30 min) |
 | NAS check | `scripts/host/nas-camera-check.sh`, root cron on Proxmox, every 5 min | share dropped → remount; CT 106 can't see it → reboot CT 106 (max once per 2 h) |
 | Boot order | `scripts/host/pve-guests-wait-nas.conf` on Proxmox | containers start after the NAS mount has been tried |
 | Email alerts | `alerts.js`, both scripts | recording stopped/resumed, camera restarted (or failed), NAS down/back, container restarted, daily summary at 9:00 |
