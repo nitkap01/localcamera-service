@@ -79,7 +79,7 @@ scripts/deploy.sh      # copy viewer/ to the host → docker compose up -d --bui
 ```
 
 Viewer: **http://192.168.0.246:8080**. Recordings land on the NAS share
-`//192.168.0.134/BACKUPS/camera feed`, which the Proxmox host mounts and passes into CT 106
+`//192.168.0.134/BACKUPS/Camera`, which the Proxmox host mounts and passes into CT 106
 (an unprivileged LXC can't mount SMB itself). Setup, settings and troubleshooting:
 [`docs/RECORDING.md`](docs/RECORDING.md). Container settings: [`viewer/DOCKER.md`](viewer/DOCKER.md).
 

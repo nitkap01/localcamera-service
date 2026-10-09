@@ -3,7 +3,7 @@
 # Deploy/update from a machine with this repo:   scripts/deploy.sh
 # (copies viewer/ to the host, then `docker compose up -d --build` there).
 #
-# Recordings: the NAS share //192.168.0.134/BACKUPS/camera feed is mounted on the Proxmox
+# Recordings: the NAS share //192.168.0.134/BACKUPS/Camera is mounted on the Proxmox
 # host and passed into the Docker host (CT 106) at /mnt/camera-feed — an unprivileged LXC
 # can't mount CIFS itself. See docs/RECORDING.md.
 #

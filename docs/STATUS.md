@@ -73,7 +73,7 @@ running as a Docker container on Portainer.
   `docker compose up -d --build` from `~/localcamera-viewer`. Nothing goes through Docker Hub.
   The previous Docker Hub container `camera-v5-old` was deleted on 05_10_2026 (owner decision); its images v2–v5 are still on the host for rollback.
 - **People-count history** stays on its original Docker volume (`DATA_VOLUME` in the host's `.env`).
-- **Recordings** go to the NAS `//192.168.0.134/BACKUPS/camera feed`, mounted on the Proxmox host
+- **Recordings** go to the NAS `//192.168.0.134/BACKUPS/Camera`, mounted on the Proxmox host
   (`/mnt/nas-camera-feed`, fstab) and passed into CT 106 as `/mnt/camera-feed` (`mp0`).
   Details: [`RECORDING.md`](./RECORDING.md).
 

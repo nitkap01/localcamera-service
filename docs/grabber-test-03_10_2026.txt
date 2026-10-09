@@ -1,0 +1,17 @@
+=== start 19:48:21
+22:43:00 STALL detected (tx +3104 B in 3 s)
+Warning: Permanently added '192.168.0.143' (ECDSA) to the list of known hosts.
+before:  5867 root       7:03 ./h264grabber -r high -m yi_home -f
+ 5873 root      28:45 ./rRTSPServer -r high
+after:  5873 root      28:45 ./rRTSPServer -r high
+ 8704 root       0:00 ./h264grabber -r high -m yi_home -f
+22:43:04 restarted ONLY h264grabber; watching tx:
+  22:43:08 tx +3056 B/3s
+  22:43:12 tx +3660 B/3s
+  22:43:16 tx +3236 B/3s
+  22:43:20 tx +3166 B/3s
+  22:43:24 tx +3142 B/3s
+  22:43:28 tx +3228 B/3s
+  22:43:32 tx +3166 B/3s
+  22:43:35 tx +3384 B/3s
+=== done 22:43:35

@@ -4,7 +4,7 @@ The viewer records the camera **all the time** into 5-minute MP4 clips on the NA
 **7 days**. Browse, play and download them in the **🎞 Recordings** tab.
 
 ```
-NAS  //192.168.0.134/BACKUPS/camera feed/
+NAS  //192.168.0.134/BACKUPS/Camera/
        02_10_2026/
          02_10_2026_14_00_00.mp4   02_10_2026_14_05_00.mp4 …   (DD_MM_YYYY_HH_MM_SS, 24-hour, India time)
 ```
@@ -57,7 +57,7 @@ the share and passes it into CT 106:
 apt-get install -y cifs-utils
 mkdir -p /mnt/nas-camera-feed
 printf 'username=nkapoor\npassword=…\n' > /root/.smb-nas-camera && chmod 600 /root/.smb-nas-camera
-echo '//192.168.0.134/BACKUPS/camera\040feed /mnt/nas-camera-feed cifs credentials=/root/.smb-nas-camera,vers=3.0,uid=100000,gid=100000,file_mode=0664,dir_mode=0775,noserverino,_netdev,nofail 0 0' >> /etc/fstab
+echo '//192.168.0.134/BACKUPS/Camera /mnt/nas-camera-feed cifs credentials=/root/.smb-nas-camera,vers=3.0,uid=100000,gid=100000,file_mode=0664,dir_mode=0775,noserverino,_netdev,nofail 0 0' >> /etc/fstab
 systemctl daemon-reload && mount /mnt/nas-camera-feed
 pct set 106 -mp0 /mnt/nas-camera-feed,mp=/mnt/camera-feed
 pct reboot 106
@@ -150,6 +150,12 @@ Logs: `docker logs camera`, `~/.camera-watchdog.log` on CT 106, `/var/log/nas-ca
 - **"Not recording"** in the tab: see the error next to it, or `docker logs camera | grep recorder`.
 - **"NAS unreachable"** in the tab: recording continues locally. Check the NAS, then on Proxmox
   `mount | grep nas-camera`; the 5-minute check remounts it. The marker `.nas-ok` must stay on the share.
+- **Renamed the NAS folder?** The mount points at the folder by name, so renaming it breaks the mount
+  (`mount error(2): No such file or directory` in `/var/log/nas-camera-check.log`), and recording falls back to
+  local disk. Fix (done 9 Oct 2026 when `camera feed` became `Camera`, CAM-10): change the path in `/etc/fstab`
+  and in `nas-camera-check.sh` on Proxmox, `mount /mnt/nas-camera-feed`, then `docker restart camera` on CT 106
+  (the container's bind mount doesn't pick up a new mount on its own). The buffered clips move to the NAS
+  automatically; the status page doesn't answer while they move (~5 min for 6 GB).
 - **Share missing**: `ls /mnt/camera-feed` in CT 106; on Proxmox `mount | grep nas-camera`,
   then `mount /mnt/nas-camera-feed` and `pct reboot 106` if needed.
 - **Camera frozen** (live view stuck, counter says `fetch failed`): restart its stream —

@@ -35,11 +35,11 @@ if ! host_ok; then
   umount -l "$MNT" 2>/dev/null
   if timeout 60 mount "$MNT" && host_ok; then
     log "remounted"
-    mail "NAS share remounted on Proxmox" "//192.168.0.134/BACKUPS/camera feed had dropped and was mounted again on the Proxmox host."
+    mail "NAS share remounted on Proxmox" "//192.168.0.134/BACKUPS/Camera had dropped and was mounted again on the Proxmox host."
     echo 1 > "$STATE/remounted"
   else
     log "remount failed"
-    mail "NAS share is DOWN" "Couldn't mount //192.168.0.134/BACKUPS/camera feed on the Proxmox host.
+    mail "NAS share is DOWN" "Couldn't mount //192.168.0.134/BACKUPS/Camera on the Proxmox host.
 Is the NAS (192.168.0.134) on? Recording continues on the Docker host's disk meanwhile and moves to the NAS once it's back."
     exit 0
   fi
